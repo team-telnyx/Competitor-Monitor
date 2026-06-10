@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """
-Competitor Monitor Tool
+Competitor Monitor Tool — AI/Voice Product Intelligence
 
-Checks competitor sitemaps for new/updated pages in the last 24 hours.
-Scrapes new pages and sends a Slack summary of product updates.
+Monitors competitor sitemaps, changelogs, blogs, docs, and release notes
+for new content related to AI assistants, inference, STT/TTS.
+
+Detects new pages via lastmod dates or snapshot diffs, scrapes content,
+then uses LLM-based classification to filter for AI/voice relevance
+and generate categorized summaries.
 """
 
 import argparse
@@ -24,14 +28,29 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env")
 load_dotenv()  # also check cwd
 
-# Default competitors to monitor
+
+# =============================================================================
+# Focus areas for AI/voice product intelligence
+# =============================================================================
+
+FOCUS_AREAS = [
+    "AI Assistants — voice agents, conversational AI, virtual assistants, agent frameworks",
+    "Inference — LLM hosting, model serving, real-time inference, API endpoints, latency improvements",
+    "STT (Speech-to-Text) — transcription, ASR, real-time speech recognition, diarization",
+    "TTS (Text-to-Speech) — voice synthesis, voice cloning, audio generation, voice models",
+]
+
+# =============================================================================
+# Competitor configurations
+# =============================================================================
+
 COMPETITORS = [
+    # --- Direct voice AI competitors ---
     {
         "name": "Vapi",
-        # Vapi's sitemap has no <lastmod> dates, so we diff against the previous snapshot
         "sitemap_urls": ["https://vapi.ai/sitemap.xml"],
         "include_patterns": [],
-        "exclude_patterns": [r"/legal/", r"/terms", r"/privacy"],
+        "exclude_patterns": [r"/legal/", r"/terms", r"/privacy", r"/careers"],
         "use_snapshot_diff": True,
     },
     {
@@ -40,17 +59,56 @@ COMPETITORS = [
         "include_patterns": [
             r"elevenlabs\.io/blog",
             r"elevenlabs\.io/docs/changelog",
+            r"elevenlabs\.io/docs/api-reference",
             r"elevenlabs\.io/[^/]+$",  # top-level product pages
         ],
         "exclude_patterns": [
-            r"/careers/",
-            r"/legal/",
-            r"/terms",
-            r"/privacy",
-            r"/languages/",
-            r"/community/",
+            r"/careers/", r"/legal/", r"/terms", r"/privacy",
+            r"/languages/", r"/community/", r"/voice-library/",
         ],
     },
+    {
+        "name": "Retell AI",
+        "sitemap_urls": ["https://www.retellai.com/sitemap.xml"],
+        "include_patterns": [
+            r"/blog/", r"/changelog", r"/docs/",
+            r"retellai\.com/[^/]+$",
+        ],
+        "exclude_patterns": [r"/legal/", r"/terms", r"/privacy", r"/careers"],
+        "use_snapshot_diff": True,
+    },
+    {
+        "name": "Bland AI",
+        "sitemap_urls": ["https://www.bland.ai/sitemap.xml"],
+        "include_patterns": [],
+        "exclude_patterns": [r"/legal/", r"/terms", r"/privacy", r"/careers"],
+        "use_snapshot_diff": True,
+    },
+    # --- Transcription / audio AI ---
+    {
+        "name": "Deepgram",
+        "sitemap_urls": ["https://deepgram.com/sitemap.xml"],
+        "include_patterns": [
+            r"/blog/", r"/changelog", r"/learn/",
+            r"deepgram\.com/[^/]+$",
+        ],
+        "exclude_patterns": [
+            r"/careers/", r"/legal/", r"/terms", r"/privacy",
+            r"/partners/", r"/events/",
+        ],
+    },
+    {
+        "name": "AssemblyAI",
+        "sitemap_urls": ["https://www.assemblyai.com/sitemap.xml"],
+        "include_patterns": [
+            r"/blog/", r"/changelog", r"/docs/",
+            r"assemblyai\.com/[^/]+$",
+        ],
+        "exclude_patterns": [
+            r"/careers/", r"/legal/", r"/terms", r"/privacy",
+        ],
+    },
+    # --- Platform competitors (filtered to AI/voice) ---
     {
         "name": "Twilio",
         "sitemap_urls": ["https://www.twilio.com/sitemap.xml"],
@@ -58,6 +116,28 @@ COMPETITORS = [
             r"twilio\.com/en-us/blog/",
             r"twilio\.com/en-us/changelog",
             r"twilio\.com/en-us/press/",
+        ],
+        "exclude_patterns": [],
+    },
+    {
+        "name": "OpenAI",
+        "sitemap_urls": ["https://openai.com/sitemap.xml"],
+        "include_patterns": [
+            r"openai\.com/index/",  # blog posts
+            r"openai\.com/api/",
+        ],
+        "exclude_patterns": [
+            r"/careers/", r"/legal/", r"/terms", r"/privacy",
+        ],
+        "use_snapshot_diff": True,
+    },
+    {
+        "name": "Google Cloud Speech",
+        "sitemap_urls": ["https://cloud.google.com/sitemap.xml"],
+        "include_patterns": [
+            r"/speech-to-text/", r"/text-to-speech/",
+            r"/vertex-ai/.*release", r"/vertex-ai/.*changelog",
+            r"/blog/products/ai-machine-learning",
         ],
         "exclude_patterns": [],
     },
@@ -72,6 +152,10 @@ HEADERS = {
 # XML namespace for sitemaps
 SM_NS = "http://www.sitemaps.org/schemas/sitemap/0.9"
 
+
+# =============================================================================
+# Sitemap parsing
+# =============================================================================
 
 def _find(parent, local_name):
     """Find child element with or without namespace."""
@@ -158,7 +242,6 @@ def parse_lastmod(lastmod_str):
         except ValueError:
             continue
 
-    # Try dateutil as fallback
     try:
         from dateutil.parser import parse as dateutil_parse
         dt = dateutil_parse(lastmod_str)
@@ -171,9 +254,13 @@ def parse_lastmod(lastmod_str):
     return None
 
 
+# =============================================================================
+# Snapshot-based change detection
+# =============================================================================
+
 def load_snapshot(name, snapshot_dir=".tmp/snapshots"):
     """Load the previous sitemap snapshot for a competitor."""
-    path = Path(snapshot_dir) / f"{name.lower()}_sitemap.json"
+    path = Path(snapshot_dir) / f"{name.lower().replace(' ', '_')}_sitemap.json"
     if not path.exists():
         return None
     try:
@@ -187,7 +274,8 @@ def save_snapshot(name, urls, snapshot_dir=".tmp/snapshots"):
     """Save the current sitemap URLs as a snapshot for next comparison."""
     path = Path(snapshot_dir)
     path.mkdir(parents=True, exist_ok=True)
-    snapshot_file = path / f"{name.lower()}_sitemap.json"
+    safe_name = name.lower().replace(" ", "_")
+    snapshot_file = path / f"{safe_name}_sitemap.json"
     snapshot_file.write_text(json.dumps({
         "urls": sorted(urls),
         "saved_at": datetime.now(timezone.utc).isoformat(),
@@ -197,10 +285,7 @@ def save_snapshot(name, urls, snapshot_dir=".tmp/snapshots"):
 
 
 def diff_snapshot(name, current_entries, include_patterns=None, exclude_patterns=None, snapshot_dir=".tmp/snapshots"):
-    """
-    Compare current sitemap URLs against the previous snapshot.
-    Returns entries that are new (not in the previous snapshot).
-    """
+    """Compare current sitemap URLs against the previous snapshot."""
     current_urls = {e["url"] for e in current_entries}
     previous_urls = load_snapshot(name, snapshot_dir)
 
@@ -215,13 +300,11 @@ def diff_snapshot(name, current_entries, include_patterns=None, exclude_patterns
     if removed_urls:
         print(f"  {len(removed_urls)} URLs removed since last run")
 
-    # Save updated snapshot
     save_snapshot(name, current_urls, snapshot_dir)
 
     if not new_urls:
         return []
 
-    # Build entries for new URLs, applying filters
     new_entries = []
     for entry in current_entries:
         if entry["url"] not in new_urls:
@@ -247,12 +330,10 @@ def filter_new_pages(entries, hours=24, include_patterns=None, exclude_patterns=
     for entry in entries:
         url = entry["url"]
 
-        # Apply include patterns (if specified, URL must match at least one)
         if include_patterns:
             if not any(re.search(p, url) for p in include_patterns):
                 continue
 
-        # Apply exclude patterns
         if exclude_patterns:
             if any(re.search(p, url) for p in exclude_patterns):
                 continue
@@ -265,45 +346,9 @@ def filter_new_pages(entries, hours=24, include_patterns=None, exclude_patterns=
     return new_pages
 
 
-def discover_from_listing_page(listing_url, base_domain, timeout=30):
-    """
-    Scrape a blog/changelog listing page and extract article links.
-    Used as fallback when sitemaps don't have lastmod dates.
-    Returns links that belong to the same domain.
-    """
-    try:
-        resp = requests.get(listing_url, headers=HEADERS, timeout=timeout)
-        resp.raise_for_status()
-    except requests.RequestException as e:
-        print(f"  Warning: Could not fetch listing page {listing_url}: {e}", file=sys.stderr)
-        return []
-
-    soup = BeautifulSoup(resp.text, "html.parser")
-    links = []
-    seen = set()
-
-    for a in soup.find_all("a", href=True):
-        href = a["href"]
-        # Make absolute
-        if href.startswith("/"):
-            href = f"https://{base_domain}{href}"
-        if base_domain not in href:
-            continue
-        # Skip the listing page itself and anchors
-        if href.rstrip("/") == listing_url.rstrip("/"):
-            continue
-        if "#" in href:
-            href = href.split("#")[0]
-        if href in seen:
-            continue
-        seen.add(href)
-
-        text = a.get_text(strip=True)
-        if text and len(text) > 5:  # skip tiny link texts
-            links.append({"url": href, "link_text": text, "lastmod": None, "source": "listing_page"})
-
-    return links
-
+# =============================================================================
+# Page scraping
+# =============================================================================
 
 def scrape_page(url, timeout=30):
     """Scrape a single page and extract key content."""
@@ -321,23 +366,19 @@ def scrape_page(url, timeout=30):
     meta_desc = soup.find("meta", attrs={"name": "description"})
     description = meta_desc.get("content", "") if meta_desc else ""
 
-    # Try og:description as fallback
     if not description:
         og_desc = soup.find("meta", attrs={"property": "og:description"})
         description = og_desc.get("content", "") if og_desc else ""
 
-    # Extract main content text
     for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
         tag.decompose()
 
-    # Try to find main content area
     main = soup.find("main") or soup.find("article") or soup.find("body")
     if main:
         text = main.get_text(separator="\n", strip=True)
     else:
         text = soup.get_text(separator="\n", strip=True)
 
-    # Clean and truncate
     lines = [line.strip() for line in text.split("\n") if line.strip()]
     text_clean = "\n".join(lines)
 
@@ -350,150 +391,273 @@ def scrape_page(url, timeout=30):
     }
 
 
-def format_slack_blocks(results, hours=24):
-    """Format results as Slack Block Kit blocks."""
-    total_new = sum(len(r["new_pages"]) for r in results)
+# =============================================================================
+# LLM-based classification and summarization
+# =============================================================================
 
-    blocks = [
-        {
-            "type": "header",
-            "text": {
-                "type": "plain_text",
-                "text": f"Competitor Monitor: {total_new} new pages detected",
-                "emoji": True,
-            },
-        },
-        {
-            "type": "context",
-            "elements": [
-                {
-                    "type": "mrkdwn",
-                    "text": f"Pages added or updated in the last {hours} hours | {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-                }
-            ],
-        },
-        {"type": "divider"},
-    ]
-
-    for r in results:
-        competitor = r["competitor"]
-        pages = r["new_pages"]
-
-        if not pages:
-            blocks.append(
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": f"*{competitor}* - No new pages",
-                    },
-                }
-            )
-            blocks.append({"type": "divider"})
-            continue
-
-        blocks.append(
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": f"*{competitor}* - {len(pages)} new page{'s' if len(pages) != 1 else ''}",
-                },
+def classify_pages(pages, competitor_name):
+    """
+    Use Claude API to classify scraped pages by AI/voice relevance.
+    Returns pages with added 'classification' field.
+    """
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        print("  Warning: ANTHROPIC_API_KEY not set. Skipping LLM classification.", file=sys.stderr)
+        # Return all pages unclassified
+        for p in pages:
+            p["classification"] = {
+                "relevant": True,
+                "category": "unclassified",
+                "summary": p.get("scraped", {}).get("description", ""),
             }
+        return pages
+
+    focus_areas_str = "\n".join(f"- {fa}" for fa in FOCUS_AREAS)
+
+    # Build page summaries for the prompt
+    page_entries = []
+    for i, page in enumerate(pages):
+        scraped = page.get("scraped", {})
+        entry = {
+            "index": i,
+            "url": page["url"],
+            "title": scraped.get("title", ""),
+            "description": scraped.get("description", ""),
+            "text_preview": scraped.get("text_preview", "")[:800],
+        }
+        page_entries.append(entry)
+
+    prompt = f"""You are classifying new web pages from {competitor_name} for an AI/voice product intelligence digest.
+
+Focus areas we care about:
+{focus_areas_str}
+
+For each page below, determine:
+1. Is it relevant to any of the focus areas above? (true/false)
+2. Which category best fits? (one of: "AI Assistants", "Inference", "STT", "TTS", or "Other AI/Voice" for related but not exact matches, or "Not Relevant")
+3. A one-sentence summary of what's new or noteworthy (from a product/competitive intelligence perspective)
+
+Pages to classify:
+{json.dumps(page_entries, indent=2)}
+
+Respond with a JSON array of objects, one per page, in the same order:
+[
+  {{"index": 0, "relevant": true, "category": "TTS", "summary": "..."}},
+  ...
+]
+
+Only output the JSON array, no other text."""
+
+    try:
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": "claude-haiku-4-5-20251001",
+                "max_tokens": 4096,
+                "messages": [{"role": "user", "content": prompt}],
+            },
+            timeout=60,
         )
+        resp.raise_for_status()
+        result = resp.json()
+        content = result["content"][0]["text"]
 
-        for page in pages[:15]:  # Limit to avoid Slack message size limits
-            scraped = page.get("scraped", {})
-            title = scraped.get("title", page["url"])
-            desc = scraped.get("description", "")
-            url = page["url"]
+        # Parse JSON from response (handle markdown code blocks)
+        content = content.strip()
+        if content.startswith("```"):
+            content = content.split("\n", 1)[1]
+            content = content.rsplit("```", 1)[0]
 
-            text = f"*<{url}|{title}>*"
-            if desc:
-                text += f"\n{desc[:200]}"
-            if page.get("lastmod"):
-                text += f"\n_Modified: {page['lastmod']}_"
+        classifications = json.loads(content)
 
-            blocks.append(
-                {
-                    "type": "section",
-                    "text": {"type": "mrkdwn", "text": text},
+        for c in classifications:
+            idx = c["index"]
+            if 0 <= idx < len(pages):
+                pages[idx]["classification"] = {
+                    "relevant": c.get("relevant", False),
+                    "category": c.get("category", "Not Relevant"),
+                    "summary": c.get("summary", ""),
                 }
-            )
 
-        if len(pages) > 15:
-            blocks.append(
-                {
-                    "type": "context",
-                    "elements": [
-                        {
-                            "type": "mrkdwn",
-                            "text": f"_...and {len(pages) - 15} more pages_",
-                        }
-                    ],
+        # Tag any unclassified pages
+        for p in pages:
+            if "classification" not in p:
+                p["classification"] = {
+                    "relevant": True,
+                    "category": "unclassified",
+                    "summary": p.get("scraped", {}).get("description", ""),
                 }
-            )
 
-        blocks.append({"type": "divider"})
+        return pages
 
-    return blocks
+    except Exception as e:
+        print(f"  Warning: LLM classification failed: {e}", file=sys.stderr)
+        for p in pages:
+            p["classification"] = {
+                "relevant": True,
+                "category": "unclassified",
+                "summary": p.get("scraped", {}).get("description", ""),
+            }
+        return pages
 
 
-def format_email_html(results, hours=24):
-    """Format results as an HTML email."""
+def generate_digest(all_results):
+    """
+    Use Claude API to generate a categorized executive digest
+    from the classified pages.
+    """
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        return None
+
+    # Collect only relevant pages
+    relevant = []
+    for r in all_results:
+        for page in r.get("new_pages", []):
+            c = page.get("classification", {})
+            if c.get("relevant", False):
+                relevant.append({
+                    "competitor": r["competitor"],
+                    "url": page["url"],
+                    "title": page.get("scraped", {}).get("title", ""),
+                    "category": c.get("category", ""),
+                    "summary": c.get("summary", ""),
+                })
+
+    if not relevant:
+        return "No relevant AI/voice product updates detected in the last scan."
+
+    focus_areas_str = "\n".join(f"- {fa}" for fa in FOCUS_AREAS)
+
+    prompt = f"""You are writing a competitive intelligence digest for a product-led growth team at a telecom/AI company.
+
+Focus areas:
+{focus_areas_str}
+
+Here are the new competitor pages detected, already classified:
+{json.dumps(relevant, indent=2)}
+
+Write a concise digest organized by focus area. For each area with updates:
+- Lead with the most important competitive signal
+- Include specific details (features, pricing, performance claims)
+- Note which competitor it's from
+- Flag anything that requires immediate attention or response
+
+If a focus area has no updates, skip it (don't say "no updates").
+
+End with a "Key Takeaways" section (2-3 bullets max) highlighting what matters most for product strategy.
+
+Keep it under 500 words. Be direct and actionable — this goes to product leadership."""
+
+    try:
+        resp = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": "claude-haiku-4-5-20251001",
+                "max_tokens": 2048,
+                "messages": [{"role": "user", "content": prompt}],
+            },
+            timeout=60,
+        )
+        resp.raise_for_status()
+        result = resp.json()
+        return result["content"][0]["text"]
+
+    except Exception as e:
+        print(f"  Warning: Digest generation failed: {e}", file=sys.stderr)
+        return None
+
+
+# =============================================================================
+# Output formatting
+# =============================================================================
+
+def format_email_html(results, digest=None, hours=24):
+    """Format results as an HTML email with optional LLM digest."""
     total_new = sum(len(r["new_pages"]) for r in results)
+    relevant_count = sum(
+        1 for r in results for p in r.get("new_pages", [])
+        if p.get("classification", {}).get("relevant", True)
+    )
     date_str = datetime.now().strftime("%B %d, %Y")
 
     html = f"""
     <html><body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1a1a1a; max-width: 700px; margin: 0 auto; padding: 20px;">
     <h1 style="font-size: 22px; border-bottom: 2px solid #e0e0e0; padding-bottom: 10px;">
-        Competitor Monitor: {total_new} new page{"s" if total_new != 1 else ""} detected
+        AI/Voice Competitor Digest — {date_str}
     </h1>
-    <p style="color: #666; font-size: 14px;">Pages added or updated in the last {hours} hours &mdash; {date_str}</p>
+    <p style="color: #666; font-size: 14px;">{relevant_count} relevant updates from {total_new} new pages in the last {hours} hours</p>
     """
+
+    # Add LLM digest at the top if available
+    if digest:
+        # Convert markdown-style formatting to basic HTML
+        digest_html = digest.replace("\n\n", "</p><p>").replace("\n- ", "<br>• ").replace("\n", "<br>")
+        html += f"""
+        <div style="background: #f0f7ff; border: 1px solid #c8ddf0; border-radius: 8px; padding: 16px; margin: 16px 0;">
+            <h2 style="font-size: 16px; margin-top: 0; color: #1a5276;">Executive Summary</h2>
+            <p style="font-size: 14px; line-height: 1.6; color: #2c3e50;">{digest_html}</p>
+        </div>
+        """
+
+    # Category color mapping
+    cat_colors = {
+        "AI Assistants": "#8e44ad",
+        "Inference": "#e67e22",
+        "STT": "#27ae60",
+        "TTS": "#2980b9",
+        "Other AI/Voice": "#7f8c8d",
+    }
 
     for r in results:
         competitor = r["competitor"]
-        pages = r["new_pages"]
-        count = len(pages)
+        pages = r.get("new_pages", [])
+        relevant_pages = [p for p in pages if p.get("classification", {}).get("relevant", True)]
 
-        html += f'<h2 style="font-size: 18px; margin-top: 24px;">{competitor} &mdash; {count} new page{"s" if count != 1 else ""}</h2>'
-
-        if not pages:
-            html += '<p style="color: #888;">No new pages detected.</p>'
+        if not relevant_pages:
             continue
 
-        for page in pages[:20]:
+        html += f'<h2 style="font-size: 18px; margin-top: 24px;">{competitor} — {len(relevant_pages)} relevant update{"s" if len(relevant_pages) != 1 else ""}</h2>'
+
+        for page in relevant_pages[:20]:
             scraped = page.get("scraped", {})
+            classification = page.get("classification", {})
             title = scraped.get("title", page["url"])
-            desc = scraped.get("description", "")
             url = page["url"]
-            lastmod = page.get("lastmod", "")
+            category = classification.get("category", "")
+            summary = classification.get("summary", scraped.get("description", ""))
+            cat_color = cat_colors.get(category, "#95a5a6")
 
             html += f"""
-            <div style="margin: 12px 0; padding: 12px; background: #f8f9fa; border-radius: 6px; border-left: 3px solid #4a90d9;">
-                <a href="{url}" style="font-weight: 600; color: #1a73e8; text-decoration: none; font-size: 15px;">{title}</a>
+            <div style="margin: 12px 0; padding: 12px; background: #f8f9fa; border-radius: 6px; border-left: 3px solid {cat_color};">
+                <span style="display: inline-block; background: {cat_color}; color: white; font-size: 11px; padding: 2px 8px; border-radius: 3px; margin-bottom: 6px;">{category}</span>
+                <br><a href="{url}" style="font-weight: 600; color: #1a73e8; text-decoration: none; font-size: 15px;">{title}</a>
                 <br><span style="font-size: 12px; color: #888;">{url}</span>
             """
-            if desc:
-                html += f'<p style="margin: 6px 0 0; font-size: 13px; color: #444;">{desc[:300]}</p>'
-            if lastmod:
-                html += f'<p style="margin: 4px 0 0; font-size: 12px; color: #999;">Modified: {lastmod}</p>'
+            if summary:
+                html += f'<p style="margin: 6px 0 0; font-size: 13px; color: #444;">{summary[:300]}</p>'
             html += "</div>"
-
-        if count > 20:
-            html += f'<p style="color: #888; font-size: 13px;">...and {count - 20} more pages</p>'
 
     html += """
     <hr style="border: none; border-top: 1px solid #e0e0e0; margin-top: 30px;">
-    <p style="font-size: 12px; color: #999;">Sent by Competitor Monitor</p>
+    <p style="font-size: 12px; color: #999;">Sent by Competitor Monitor — AI/Voice Product Intelligence</p>
     </body></html>
     """
 
     return html
 
 
-def send_email(results, to_email, hours=24):
+def send_email(results, to_email, digest=None, hours=24):
     """Send results via SendGrid email."""
     api_key = os.getenv("SENDGRID_API_KEY")
     sender = os.getenv("SENDGRID_SENDER_EMAIL")
@@ -509,9 +673,12 @@ def send_email(results, to_email, hours=24):
     except ImportError:
         return {"status": "error", "error": "sendgrid not installed. Run: pip install sendgrid"}
 
-    total_new = sum(len(r["new_pages"]) for r in results)
-    subject = f"Competitor Monitor: {total_new} new pages detected — {datetime.now().strftime('%b %d')}"
-    html_content = format_email_html(results, hours=hours)
+    relevant_count = sum(
+        1 for r in results for p in r.get("new_pages", [])
+        if p.get("classification", {}).get("relevant", True)
+    )
+    subject = f"AI/Voice Competitor Digest: {relevant_count} updates — {datetime.now().strftime('%b %d')}"
+    html_content = format_email_html(results, digest=digest, hours=hours)
 
     message = Mail(
         from_email=sender,
@@ -537,20 +704,19 @@ def send_to_slack(blocks, channel=None):
         print("Warning: Could not import Slack alerts module", file=sys.stderr)
         return {"status": "error", "error": "Slack module not available"}
 
-    total = sum(
-        1
-        for b in blocks
-        if b.get("type") == "section" and "new page" not in b.get("text", {}).get("text", "")
-    )
-
     return send_slack_message(
         blocks=blocks,
-        text=f"Competitor Monitor: new pages detected",
+        text="Competitor Monitor: new AI/voice updates detected",
         channel=channel or os.getenv("SLACK_COMPETITOR_CHANNEL", "#product-intel"),
     )
 
 
-def run_monitor(competitors=None, hours=24, scrape=True, slack=True, email_to=None, output_dir=".tmp"):
+# =============================================================================
+# Main monitor
+# =============================================================================
+
+def run_monitor(competitors=None, hours=24, scrape=True, classify=True,
+                slack=True, email_to=None, output_dir=".tmp"):
     """
     Main monitoring function.
 
@@ -558,6 +724,7 @@ def run_monitor(competitors=None, hours=24, scrape=True, slack=True, email_to=No
         competitors: List of competitor configs (uses defaults if None)
         hours: Look-back window in hours
         scrape: Whether to scrape discovered pages for content
+        classify: Whether to use LLM to classify and summarize pages
         slack: Whether to send Slack notification
         email_to: Email address to send results to (None = skip)
         output_dir: Directory for JSON output
@@ -586,7 +753,6 @@ def run_monitor(competitors=None, hours=24, scrape=True, slack=True, email_to=No
 
         # Detect new pages
         if comp.get("use_snapshot_diff"):
-            # Snapshot diff: compare current sitemap to previous run
             print(f"  Using snapshot diff (no lastmod available)")
             new_pages = diff_snapshot(
                 name,
@@ -597,7 +763,6 @@ def run_monitor(competitors=None, hours=24, scrape=True, slack=True, email_to=No
             )
             print(f"  {len(new_pages)} new pages since last run")
         else:
-            # Standard lastmod-based filtering
             new_pages = filter_new_pages(
                 all_entries,
                 hours=hours,
@@ -613,6 +778,18 @@ def run_monitor(competitors=None, hours=24, scrape=True, slack=True, email_to=No
                 print(f"    [{i+1}/{len(new_pages)}] {page['url']}")
                 page["scraped"] = scrape_page(page["url"])
 
+        # LLM classification
+        if classify and scrape and new_pages:
+            print(f"  Classifying {len(new_pages)} pages with LLM...")
+            new_pages = classify_pages(new_pages, name)
+            relevant = [p for p in new_pages if p.get("classification", {}).get("relevant")]
+            filtered = len(new_pages) - len(relevant)
+            if filtered:
+                print(f"  Filtered out {filtered} non-relevant pages")
+            for p in relevant:
+                c = p["classification"]
+                print(f"    [{c['category']}] {p.get('scraped', {}).get('title', p['url'])}")
+
         all_results.append(
             {
                 "competitor": name,
@@ -622,30 +799,57 @@ def run_monitor(competitors=None, hours=24, scrape=True, slack=True, email_to=No
             }
         )
 
+    # Generate LLM digest
+    digest = None
+    if classify:
+        print("\nGenerating executive digest...")
+        digest = generate_digest(all_results)
+        if digest:
+            print("\n" + "=" * 60)
+            print("EXECUTIVE DIGEST")
+            print("=" * 60)
+            print(digest)
+
     # Save results to JSON
     output_path = Path(output_dir)
     output_path.mkdir(exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_data = {
+        "results": all_results,
+        "digest": digest,
+        "scan_time": datetime.now(timezone.utc).isoformat(),
+        "hours": hours,
+    }
     json_file = output_path / f"competitor_monitor_{timestamp}.json"
-    json_file.write_text(json.dumps(all_results, indent=2, default=str))
+    json_file.write_text(json.dumps(output_data, indent=2, default=str))
     print(f"\nResults saved to {json_file}")
 
     # Send Slack notification
-    total_new = sum(len(r["new_pages"]) for r in all_results)
-    if slack and total_new > 0:
+    total_relevant = sum(
+        1 for r in all_results for p in r.get("new_pages", [])
+        if p.get("classification", {}).get("relevant", True)
+    )
+    if slack and total_relevant > 0:
         print("\nSending Slack notification...")
-        blocks = format_slack_blocks(all_results, hours=hours)
+        # For Slack, just send the digest text as a simple message
+        blocks = [
+            {"type": "header", "text": {"type": "plain_text", "text": f"AI/Voice Competitor Digest", "emoji": True}},
+            {"type": "context", "elements": [{"type": "mrkdwn", "text": f"{total_relevant} relevant updates | {datetime.now().strftime('%Y-%m-%d')}"}]},
+            {"type": "divider"},
+        ]
+        if digest:
+            blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": digest[:3000]}})
         result = send_to_slack(blocks)
         print(f"  Slack: {result.get('status', 'unknown')}")
         if result.get("error"):
             print(f"  Error: {result['error']}")
-    elif slack and total_new == 0:
-        print("\nNo new pages found. Skipping Slack notification.")
+    elif slack and total_relevant == 0:
+        print("\nNo relevant AI/voice updates found. Skipping Slack notification.")
 
     # Send email
     if email_to:
         print(f"\nSending email to {email_to}...")
-        result = send_email(all_results, email_to, hours=hours)
+        result = send_email(all_results, email_to, digest=digest, hours=hours)
         print(f"  Email: {result.get('status', 'unknown')}")
         if result.get("error"):
             print(f"  Error: {result['error']}")
@@ -655,69 +859,50 @@ def run_monitor(competitors=None, hours=24, scrape=True, slack=True, email_to=No
     print("SUMMARY")
     print(f"{'='*60}")
     for r in all_results:
-        count = len(r["new_pages"])
-        print(f"  {r['competitor']}: {count} new page{'s' if count != 1 else ''}")
-        for page in r["new_pages"][:5]:
+        pages = r.get("new_pages", [])
+        relevant = [p for p in pages if p.get("classification", {}).get("relevant", True)]
+        total = len(pages)
+        rel = len(relevant)
+        print(f"  {r['competitor']}: {rel} relevant / {total} total new pages")
+        for page in relevant[:5]:
+            c = page.get("classification", {})
             title = page.get("scraped", {}).get("title", page["url"])
-            print(f"    - {title}")
+            cat = c.get("category", "")
+            print(f"    [{cat}] {title}")
             print(f"      {page['url']}")
-        if count > 5:
-            print(f"    ... and {count - 5} more")
-    print(f"\nTotal: {total_new} new pages across {len(all_results)} competitors")
+        if rel > 5:
+            print(f"    ... and {rel - 5} more")
+    print(f"\nTotal: {total_relevant} relevant updates across {len(all_results)} competitors")
 
     return all_results
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Monitor competitor websites for new pages",
+        description="Monitor competitor websites for AI/voice product updates",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   python tools/competitor_monitor.py
   python tools/competitor_monitor.py --hours 48
-  python tools/competitor_monitor.py --no-slack --no-scrape
+  python tools/competitor_monitor.py --no-slack --no-classify
         """,
     )
 
-    parser.add_argument(
-        "--hours",
-        type=int,
-        default=24,
-        help="Look-back window in hours (default: 24)",
-    )
-    parser.add_argument(
-        "--no-scrape",
-        action="store_true",
-        help="Skip scraping page content (faster, sitemap data only)",
-    )
-    parser.add_argument(
-        "--no-slack",
-        action="store_true",
-        help="Skip sending Slack notification",
-    )
-    parser.add_argument(
-        "--output-dir",
-        default=".tmp",
-        help="Directory for JSON output (default: .tmp)",
-    )
-    parser.add_argument(
-        "--email",
-        type=str,
-        default=None,
-        help="Email address to send results to (via SendGrid)",
-    )
-    parser.add_argument(
-        "--json-only",
-        action="store_true",
-        help="Output only JSON to stdout",
-    )
+    parser.add_argument("--hours", type=int, default=24, help="Look-back window in hours (default: 24)")
+    parser.add_argument("--no-scrape", action="store_true", help="Skip scraping page content")
+    parser.add_argument("--no-classify", action="store_true", help="Skip LLM classification and summarization")
+    parser.add_argument("--no-slack", action="store_true", help="Skip sending Slack notification")
+    parser.add_argument("--email", type=str, default=None, help="Email address to send results to")
+    parser.add_argument("--output-dir", default=".tmp", help="Directory for JSON output (default: .tmp)")
+    parser.add_argument("--json-only", action="store_true", help="Output only JSON to stdout")
 
     args = parser.parse_args()
 
     results = run_monitor(
         hours=args.hours,
         scrape=not args.no_scrape,
+        classify=not args.no_classify,
         slack=not args.no_slack,
         email_to=args.email,
         output_dir=args.output_dir,

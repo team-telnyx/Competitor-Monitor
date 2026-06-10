@@ -1,6 +1,20 @@
 # Competitor Monitor
 
-Daily automated monitoring of competitor websites (Vapi, ElevenLabs, Twilio) for new product updates.
+AI/voice product intelligence — daily automated monitoring of competitor websites for updates related to AI assistants, inference, STT, and TTS.
+
+## Competitors Tracked
+
+**Voice AI**: Vapi, ElevenLabs, Retell AI, Bland AI
+**Transcription**: Deepgram, AssemblyAI
+**Platforms**: Twilio, OpenAI, Google Cloud Speech
+
+## How It Works
+
+1. Fetches competitor sitemaps and detects new pages (via `lastmod` or snapshot diffs)
+2. Scrapes new pages for content
+3. **LLM classifies** each page by focus area (AI Assistants, Inference, STT, TTS) and filters out noise
+4. **LLM generates** an executive digest with competitive signals
+5. Delivers via Slack and/or email
 
 ## Setup
 
@@ -8,14 +22,28 @@ Daily automated monitoring of competitor websites (Vapi, ElevenLabs, Twilio) for
 pip install -r requirements.txt
 ```
 
+Set in `.env`:
+```
+ANTHROPIC_API_KEY=sk-...       # Required for classification/summarization
+SLACK_BOT_TOKEN=xoxb-...       # Optional: Slack delivery
+SENDGRID_API_KEY=SG....        # Optional: email delivery
+SENDGRID_SENDER_EMAIL=...      # Optional: email sender
+```
+
 ## Usage
 
 ```bash
-# Run with defaults (last 24h, scrape pages, send Slack summary)
+# Full run: scrape, classify, summarize, post to Slack
 python tools/competitor_monitor.py
 
+# Skip LLM (raw results only)
+python tools/competitor_monitor.py --no-classify
+
+# Email digest
+python tools/competitor_monitor.py --email user@example.com
+
 # Dry run
-python tools/competitor_monitor.py --no-slack --no-scrape
+python tools/competitor_monitor.py --no-slack --no-scrape --no-classify
 
 # Custom time window
 python tools/competitor_monitor.py --hours 48
