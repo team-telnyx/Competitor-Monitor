@@ -20,25 +20,25 @@ Daily automated scan of competitor websites to detect new pages and product upda
 ## Competitors Monitored
 
 ### Direct Voice AI
-| Competitor | Detection Method | Focus |
-|-----------|-----------------|-------|
-| Vapi | Snapshot diff | Voice agents, orchestration |
-| ElevenLabs | Lastmod | TTS, voice cloning, audio AI |
-| Retell AI | Snapshot diff | Voice agents, contact center AI |
-| Bland AI | Snapshot diff | Voice agents, phone AI |
+| Competitor | Detection Method | Has `lastmod` | Focus |
+|-----------|-----------------|:---:|-------|
+| Vapi | Snapshot diff | No | Voice agents, orchestration |
+| ElevenLabs | Lastmod | Yes | TTS, voice cloning, audio AI |
+| Retell AI | Snapshot diff | No | Voice agents, contact center AI |
+| Bland AI | Lastmod | Yes | Voice agents, phone AI |
 
 ### Transcription / Audio AI
-| Competitor | Detection Method | Focus |
-|-----------|-----------------|-------|
-| Deepgram | Lastmod | STT, audio intelligence |
-| AssemblyAI | Lastmod | STT, audio intelligence |
+| Competitor | Detection Method | Has `lastmod` | Focus |
+|-----------|-----------------|:---:|-------|
+| Deepgram | Snapshot diff | No | STT, audio intelligence |
+| AssemblyAI | Snapshot diff | No | STT, audio intelligence |
 
 ### Platform Competitors
-| Competitor | Detection Method | Focus |
-|-----------|-----------------|-------|
-| Twilio | Lastmod | Blog, changelog, press (filtered to en-us) |
-| OpenAI | Snapshot diff | Realtime API, inference, audio models |
-| Google Cloud | Lastmod | Speech-to-Text, Text-to-Speech, Vertex AI |
+| Competitor | Detection Method | Has `lastmod` | Focus |
+|-----------|-----------------|:---:|-------|
+| Twilio | Lastmod | Yes | Blog, changelog, press (filtered to en-us) |
+| OpenAI | Lastmod | Yes | Realtime API, inference, audio models |
+| Google Cloud | Lastmod | Yes | Speech-to-Text, Text-to-Speech, Vertex AI |
 
 ## Tool to Execute
 `tools/competitor_monitor.py`

@@ -79,14 +79,15 @@ COMPETITORS = [
     },
     {
         "name": "Bland AI",
+        # Has lastmod
         "sitemap_urls": ["https://www.bland.ai/sitemap.xml"],
         "include_patterns": [],
         "exclude_patterns": [r"/legal/", r"/terms", r"/privacy", r"/careers"],
-        "use_snapshot_diff": True,
     },
     # --- Transcription / audio AI ---
     {
         "name": "Deepgram",
+        # No lastmod
         "sitemap_urls": ["https://deepgram.com/sitemap.xml"],
         "include_patterns": [
             r"/blog/", r"/changelog", r"/learn/",
@@ -96,9 +97,11 @@ COMPETITORS = [
             r"/careers/", r"/legal/", r"/terms", r"/privacy",
             r"/partners/", r"/events/",
         ],
+        "use_snapshot_diff": True,
     },
     {
         "name": "AssemblyAI",
+        # No lastmod
         "sitemap_urls": ["https://www.assemblyai.com/sitemap.xml"],
         "include_patterns": [
             r"/blog/", r"/changelog", r"/docs/",
@@ -107,10 +110,12 @@ COMPETITORS = [
         "exclude_patterns": [
             r"/careers/", r"/legal/", r"/terms", r"/privacy",
         ],
+        "use_snapshot_diff": True,
     },
     # --- Platform competitors (filtered to AI/voice) ---
     {
         "name": "Twilio",
+        # Has lastmod
         "sitemap_urls": ["https://www.twilio.com/sitemap.xml"],
         "include_patterns": [
             r"twilio\.com/en-us/blog/",
@@ -121,6 +126,7 @@ COMPETITORS = [
     },
     {
         "name": "OpenAI",
+        # Has lastmod
         "sitemap_urls": ["https://openai.com/sitemap.xml"],
         "include_patterns": [
             r"openai\.com/index/",  # blog posts
@@ -129,7 +135,6 @@ COMPETITORS = [
         "exclude_patterns": [
             r"/careers/", r"/legal/", r"/terms", r"/privacy",
         ],
-        "use_snapshot_diff": True,
     },
     {
         "name": "Google Cloud Speech",
