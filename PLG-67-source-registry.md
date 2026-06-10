@@ -84,7 +84,8 @@
 | RSS | N/A | — | — | — | — | — | Newsletter signup only ("AIMinds") |
 
 **Product area tags:** STT, Audio Intelligence, Voice AI
-**Scraping constraints:** Developer docs and changelog are auth-gated. Blog is only reliable source. No lastmod in sitemap — use snapshot diff.
+**Additional source:** GitHub SDK releases at `https://github.com/deepgram/deepgram-python-sdk/releases.atom` — Atom feed, has dates, contains product signals (e.g. "diarization v2 batch GA"). Active — latest release June 3, 2026.
+**Scraping constraints:** Developer docs and changelog are auth-gated. Blog + GitHub releases are reliable sources. No lastmod in sitemap — use snapshot diff.
 
 ---
 
@@ -99,7 +100,8 @@
 | RSS | N/A | — | — | — | — | — | No RSS feed |
 
 **Product area tags:** STT, Audio Intelligence, Speaker Diarization
-**Scraping constraints:** Changelog page exists but renders as a stub with no entries. Blog is the primary source. No lastmod — use snapshot diff.
+**Additional source:** GitHub SDK releases at `https://github.com/AssemblyAI/assemblyai-python-sdk/releases.atom` — Atom feed, has dates, contains product signals (e.g. new `u3-rt-pro-beta-1` streaming speech model). Very active — multiple releases per week.
+**Scraping constraints:** Changelog page exists but renders as a stub with no entries. Blog + GitHub releases are reliable sources. No lastmod — use snapshot diff.
 
 ---
 
