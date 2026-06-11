@@ -24,6 +24,8 @@ import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
+from inference import get_inference_client
+
 # Load .env from project root (parent of tools/)
 load_dotenv(Path(__file__).parent.parent / ".env")
 load_dotenv()  # also check cwd
@@ -402,12 +404,12 @@ def scrape_page(url, timeout=30):
 
 def classify_pages(pages, competitor_name):
     """
-    Use Claude API to classify scraped pages by AI/voice relevance.
+    Use the configured inference provider to classify pages by AI/voice relevance.
     Returns pages with added 'classification' field.
     """
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
-        print("  Warning: ANTHROPIC_API_KEY not set. Skipping LLM classification.", file=sys.stderr)
+    inference_client = get_inference_client()
+    if not inference_client:
+        print("  Warning: OPENAI_API_KEY not set. Skipping LLM classification.", file=sys.stderr)
         # Return all pages unclassified
         for p in pages:
             p["classification"] = {
@@ -416,8 +418,6 @@ def classify_pages(pages, competitor_name):
                 "summary": p.get("scraped", {}).get("description", ""),
             }
         return pages
-
-    focus_areas_str = "\n".join(f"- {fa}" for fa in FOCUS_AREAS)
 
     # Build page summaries for the prompt
     page_entries = []
@@ -432,53 +432,12 @@ def classify_pages(pages, competitor_name):
         }
         page_entries.append(entry)
 
-    prompt = f"""You are classifying new web pages from {competitor_name} for an AI/voice product intelligence digest.
-
-Focus areas we care about:
-{focus_areas_str}
-
-For each page below, determine:
-1. Is it relevant to any of the focus areas above? (true/false)
-2. Which category best fits? (one of: "AI Assistants", "Inference", "STT", "TTS", or "Other AI/Voice" for related but not exact matches, or "Not Relevant")
-3. A one-sentence summary of what's new or noteworthy (from a product/competitive intelligence perspective)
-
-Pages to classify:
-{json.dumps(page_entries, indent=2)}
-
-Respond with a JSON array of objects, one per page, in the same order:
-[
-  {{"index": 0, "relevant": true, "category": "TTS", "summary": "..."}},
-  ...
-]
-
-Only output the JSON array, no other text."""
-
     try:
-        resp = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": "claude-haiku-4-5-20251001",
-                "max_tokens": 4096,
-                "messages": [{"role": "user", "content": prompt}],
-            },
-            timeout=60,
+        classifications = inference_client.classify_pages(
+            competitor_name=competitor_name,
+            focus_areas=FOCUS_AREAS,
+            page_entries=page_entries,
         )
-        resp.raise_for_status()
-        result = resp.json()
-        content = result["content"][0]["text"]
-
-        # Parse JSON from response (handle markdown code blocks)
-        content = content.strip()
-        if content.startswith("```"):
-            content = content.split("\n", 1)[1]
-            content = content.rsplit("```", 1)[0]
-
-        classifications = json.loads(content)
 
         for c in classifications:
             idx = c["index"]
@@ -513,11 +472,11 @@ Only output the JSON array, no other text."""
 
 def generate_digest(all_results):
     """
-    Use Claude API to generate a categorized executive digest
+    Use the configured inference provider to generate a categorized executive digest
     from the classified pages.
     """
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
+    inference_client = get_inference_client()
+    if not inference_client:
         return None
 
     # Collect only relevant pages
@@ -537,50 +496,32 @@ def generate_digest(all_results):
     if not relevant:
         return "No relevant AI/voice product updates detected in the last scan."
 
-    focus_areas_str = "\n".join(f"- {fa}" for fa in FOCUS_AREAS)
-
-    prompt = f"""You are writing a competitive intelligence digest for a product-led growth team at a telecom/AI company.
-
-Focus areas:
-{focus_areas_str}
-
-Here are the new competitor pages detected, already classified:
-{json.dumps(relevant, indent=2)}
-
-Write a concise digest organized by focus area. For each area with updates:
-- Lead with the most important competitive signal
-- Include specific details (features, pricing, performance claims)
-- Note which competitor it's from
-- Flag anything that requires immediate attention or response
-
-If a focus area has no updates, skip it (don't say "no updates").
-
-End with a "Key Takeaways" section (2-3 bullets max) highlighting what matters most for product strategy.
-
-Keep it under 500 words. Be direct and actionable — this goes to product leadership."""
-
     try:
-        resp = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": "claude-haiku-4-5-20251001",
-                "max_tokens": 2048,
-                "messages": [{"role": "user", "content": prompt}],
-            },
-            timeout=60,
+        return inference_client.generate_digest(
+            focus_areas=FOCUS_AREAS,
+            relevant_pages=relevant,
         )
-        resp.raise_for_status()
-        result = resp.json()
-        return result["content"][0]["text"]
 
     except Exception as e:
         print(f"  Warning: Digest generation failed: {e}", file=sys.stderr)
         return None
+
+
+def select_competitors(competitors, names=None):
+    """Return competitor configs matching one or more case-insensitive names."""
+    if not names:
+        return competitors
+
+    requested = {name.strip().lower() for name in names if name and name.strip()}
+    selected = [c for c in competitors if c["name"].lower() in requested]
+    found = {c["name"].lower() for c in selected}
+    missing = sorted(requested - found)
+    if missing:
+        available = ", ".join(c["name"] for c in competitors)
+        raise ValueError(
+            f"Unknown competitor(s): {', '.join(missing)}. Available: {available}"
+        )
+    return selected
 
 
 # =============================================================================
@@ -721,7 +662,7 @@ def send_to_slack(blocks, channel=None):
 # =============================================================================
 
 def run_monitor(competitors=None, hours=24, scrape=True, classify=True,
-                slack=True, email_to=None, output_dir=".tmp"):
+                slack=True, email_to=None, output_dir=".tmp", require_inference=False):
     """
     Main monitoring function.
 
@@ -733,12 +674,19 @@ def run_monitor(competitors=None, hours=24, scrape=True, classify=True,
         slack: Whether to send Slack notification
         email_to: Email address to send results to (None = skip)
         output_dir: Directory for JSON output
+        require_inference: Fail instead of falling back when no inference client is configured
 
     Returns:
         List of results per competitor
     """
     if competitors is None:
         competitors = COMPETITORS
+
+    if classify and require_inference and not get_inference_client():
+        raise RuntimeError(
+            "OPENAI_API_KEY is required when --require-inference is used. "
+            "Set it in the environment or repo-root .env."
+        )
 
     all_results = []
 
@@ -822,6 +770,10 @@ def run_monitor(competitors=None, hours=24, scrape=True, classify=True,
     output_data = {
         "results": all_results,
         "digest": digest,
+        "inference": {
+            "provider": "openai",
+            "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        } if classify and os.getenv("OPENAI_API_KEY") else None,
         "scan_time": datetime.now(timezone.utc).isoformat(),
         "hours": hours,
     }
@@ -890,13 +842,16 @@ def main():
 Examples:
   python tools/competitor_monitor.py
   python tools/competitor_monitor.py --hours 48
+  python tools/competitor_monitor.py --competitor ElevenLabs --require-inference --no-slack
   python tools/competitor_monitor.py --no-slack --no-classify
         """,
     )
 
+    parser.add_argument("--competitor", action="append", help="Run only the named competitor (repeatable)")
     parser.add_argument("--hours", type=int, default=24, help="Look-back window in hours (default: 24)")
     parser.add_argument("--no-scrape", action="store_true", help="Skip scraping page content")
     parser.add_argument("--no-classify", action="store_true", help="Skip LLM classification and summarization")
+    parser.add_argument("--require-inference", action="store_true", help="Fail if LLM inference is not configured")
     parser.add_argument("--no-slack", action="store_true", help="Skip sending Slack notification")
     parser.add_argument("--email", type=str, default=None, help="Email address to send results to")
     parser.add_argument("--output-dir", default=".tmp", help="Directory for JSON output (default: .tmp)")
@@ -904,14 +859,21 @@ Examples:
 
     args = parser.parse_args()
 
-    results = run_monitor(
-        hours=args.hours,
-        scrape=not args.no_scrape,
-        classify=not args.no_classify,
-        slack=not args.no_slack,
-        email_to=args.email,
-        output_dir=args.output_dir,
-    )
+    try:
+        selected_competitors = select_competitors(COMPETITORS, args.competitor)
+        results = run_monitor(
+            competitors=selected_competitors,
+            hours=args.hours,
+            scrape=not args.no_scrape,
+            classify=not args.no_classify,
+            slack=not args.no_slack,
+            email_to=args.email,
+            output_dir=args.output_dir,
+            require_inference=args.require_inference,
+        )
+    except (RuntimeError, ValueError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
     if args.json_only:
         print(json.dumps(results, indent=2, default=str))

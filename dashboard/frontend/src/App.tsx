@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 import type { Filters } from "./types";
 import { FiltersBar } from "./components/Filters";
@@ -9,6 +9,8 @@ import { PageDetailDrawer } from "./components/PageDetailDrawer";
 export function App() {
   const [filters, setFilters] = useState<Filters>({ relevant: "true", page: 1 });
   const [openId, setOpenId] = useState<number | null>(null);
+  const [refreshJobId, setRefreshJobId] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   const competitorsQuery = useQuery({
     queryKey: ["competitors"],
@@ -20,15 +22,75 @@ export function App() {
     queryFn: () => api.pages(filters),
   });
 
+  const refreshMutation = useMutation({
+    mutationFn: () =>
+      api.startRun({
+        hours: 24,
+        competitor: filters.competitor,
+        noSlack: true,
+        requireInference: true,
+      }),
+    onSuccess: (job) => setRefreshJobId(job.jobId),
+  });
+
+  const refreshJobQuery = useQuery({
+    queryKey: ["refresh-job", refreshJobId],
+    queryFn: () => api.runJob(refreshJobId!),
+    enabled: Boolean(refreshJobId),
+    refetchInterval: (query) =>
+      query.state.data?.status === "running" ? 2000 : false,
+  });
+
+  useEffect(() => {
+    if (refreshJobQuery.data?.status === "succeeded") {
+      queryClient.invalidateQueries({ queryKey: ["pages"] });
+      queryClient.invalidateQueries({ queryKey: ["competitors"] });
+    }
+  }, [queryClient, refreshJobQuery.data?.status]);
+
   const page = filters.page ?? 1;
   const data = pagesQuery.data;
 
   return (
     <div className="app">
       <header className="app-header">
-        <h1>Competitor Intelligence</h1>
-        <span className="subtitle">AI / Voice product archive</span>
+        <div>
+          <h1>Competitor Intelligence</h1>
+          <span className="subtitle">AI / Voice product archive</span>
+        </div>
+        <button
+          className="refresh-button"
+          disabled={
+            refreshMutation.isPending ||
+            refreshJobQuery.data?.status === "running"
+          }
+          onClick={() => refreshMutation.mutate()}
+          title="Scrape recent updates, classify with inference, and ingest without sending Slack"
+        >
+          {refreshMutation.isPending || refreshJobQuery.data?.status === "running"
+            ? "Refreshing…"
+            : `Refresh ${filters.competitor ?? "all"}`}
+        </button>
       </header>
+
+      {(refreshMutation.error || refreshJobQuery.data) && (
+        <div
+          className={`refresh-status ${
+            refreshJobQuery.data?.status === "failed" ? "error" : ""
+          }`}
+        >
+          {refreshMutation.error &&
+            `Could not start refresh: ${(refreshMutation.error as Error).message}`}
+          {refreshJobQuery.data?.status === "running" &&
+            "Refresh running with inference…"}
+          {refreshJobQuery.data?.status === "succeeded" &&
+            `Refresh complete: ${refreshJobQuery.data.pagesIngested ?? 0} pages, ${
+              refreshJobQuery.data.relevant ?? 0
+            } relevant.`}
+          {refreshJobQuery.data?.status === "failed" &&
+            `Refresh failed: ${refreshJobQuery.data.error ?? "unknown error"}`}
+        </div>
+      )}
 
       <FiltersBar
         filters={filters}

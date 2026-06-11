@@ -3,12 +3,31 @@ import type {
   Filters,
   PageDetail,
   PageList,
+  RunJob,
+  StartRunRequest,
+  StartRunResponse,
 } from "./types";
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
   if (!res.ok) {
     throw new Error(`${res.status} ${res.statusText}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+async function postJson<T>(url: string, body: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => null);
+    const message = errorBody?.error?.formErrors?.join("; ") ||
+      errorBody?.error ||
+      `${res.status} ${res.statusText}`;
+    throw new Error(message);
   }
   return res.json() as Promise<T>;
 }
@@ -31,4 +50,7 @@ export const api = {
   page: (id: number) => getJson<PageDetail>(`/api/pages/${id}`),
   competitors: () =>
     getJson<{ items: CompetitorHealth[] }>("/api/competitors"),
+  startRun: (body: StartRunRequest) =>
+    postJson<StartRunResponse>("/api/runs", body),
+  runJob: (id: string) => getJson<RunJob>(`/api/runs/jobs/${id}`),
 };

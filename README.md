@@ -22,12 +22,22 @@ AI/voice product intelligence — daily automated monitoring of competitor websi
 pip install -r requirements.txt
 ```
 
-Set in `.env`:
+Create a local `.env` from the sample and add secrets there (do not commit it):
+```bash
+cp .env.example .env
 ```
-ANTHROPIC_API_KEY=sk-...       # Required for classification/summarization
-SLACK_BOT_TOKEN=xoxb-...       # Optional: Slack delivery
-SENDGRID_API_KEY=SG....        # Optional: email delivery
-SENDGRID_SENDER_EMAIL=...      # Optional: email sender
+
+Required for LLM classification/summarization:
+```
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o-mini       # Optional override
+```
+
+Optional delivery settings:
+```
+SLACK_BOT_TOKEN=xoxb-...       # Slack delivery
+SENDGRID_API_KEY=SG....        # Email delivery
+SENDGRID_SENDER_EMAIL=...      # Email sender
 ```
 
 ## Usage
@@ -35,6 +45,9 @@ SENDGRID_SENDER_EMAIL=...      # Optional: email sender
 ```bash
 # Full run: scrape, classify, summarize, post to Slack
 python tools/competitor_monitor.py
+
+# Refresh one competitor and fail fast if inference is not configured
+python tools/competitor_monitor.py --competitor ElevenLabs --require-inference --no-slack
 
 # Skip LLM (raw results only)
 python tools/competitor_monitor.py --no-classify

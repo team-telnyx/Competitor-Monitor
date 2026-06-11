@@ -13,8 +13,8 @@ Daily automated scan of competitor websites to detect new pages and product upda
 
 1. **Discovery** — Fetches each competitor's sitemap(s), detects new pages via `<lastmod>` dates or snapshot diffs
 2. **Scraping** — Extracts title, description, and content preview from each new page
-3. **Classification** — Claude Haiku classifies each page by focus area and filters out irrelevant content (careers, legal, marketing fluff)
-4. **Summarization** — Claude generates a categorized executive digest highlighting competitive signals
+3. **Classification** — OpenAI classifies each page by focus area and filters out irrelevant content (careers, legal, marketing fluff)
+4. **Summarization** — OpenAI generates a categorized executive digest highlighting competitive signals
 5. **Delivery** — Posts digest to Slack and/or sends email
 
 ## Competitors Monitored
@@ -64,7 +64,9 @@ python tools/competitor_monitor.py --email user@example.com
 ## Environment Variables
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `ANTHROPIC_API_KEY` | For classification | LLM-based relevance filtering and digest |
+| `OPENAI_API_KEY` | For classification | LLM-based relevance filtering and digest |
+| `OPENAI_MODEL` | Optional | OpenAI model (defaults to `gpt-4o-mini`) |
+| `OPENAI_BASE_URL` | Optional | OpenAI-compatible API base URL override |
 | `SLACK_BOT_TOKEN` | For Slack | Post digest to Slack channel |
 | `SLACK_COMPETITOR_CHANNEL` | Optional | Slack channel (defaults to `#product-intel`) |
 | `SENDGRID_API_KEY` | For email | Send digest via email |
@@ -84,7 +86,7 @@ Edit the `COMPETITORS` list in `tools/competitor_monitor.py`:
 
 ## Known Constraints
 - **No lastmod = snapshot diff**: Competitors without `<lastmod>` use snapshot diffs. First run saves a baseline with 0 results.
-- **LLM classification costs**: Uses Claude Haiku (~$0.001 per classification batch). Negligible for daily runs.
+- **LLM classification costs**: Uses the configured OpenAI model only for pages that need classification/digest generation.
 - **JS-rendered sitemaps**: Standard XML sitemaps only.
 - **Rate limiting**: Pages scraped sequentially to avoid blocks.
 - **Google Cloud sitemap**: Very large. Include filters keep scan time reasonable.

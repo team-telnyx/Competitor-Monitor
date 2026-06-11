@@ -34,9 +34,10 @@ a:hover {
 
 .app-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   margin-bottom: 8px;
+  gap: 16px;
 }
 .app-header h1 {
   font-size: 22px;
@@ -45,6 +46,36 @@ a:hover {
 .app-header .subtitle {
   color: var(--muted);
   font-size: 13px;
+}
+
+.refresh-button {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 12px;
+  white-space: nowrap;
+}
+.refresh-button:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+.refresh-status {
+  background: #eef6ff;
+  border: 1px solid #c8ddf0;
+  border-radius: 8px;
+  color: #1f4e79;
+  font-size: 13px;
+  margin: 12px 0;
+  padding: 10px 12px;
+}
+.refresh-status.error {
+  background: #fff4f4;
+  border-color: #f0caca;
+  color: #a33a3a;
 }
 
 .filters {
