@@ -22,9 +22,10 @@ AI/voice product intelligence — daily automated monitoring of competitor websi
 pip install -r requirements.txt
 ```
 
-Create a local `.env` from the sample and add secrets there (do not commit it):
+Create a local variables file from the sample and add secrets there (do not commit it):
 ```bash
-cp .env.example .env
+mkdir -p local
+cp local/.env.example local/.env
 ```
 
 Required for LLM classification/summarization:

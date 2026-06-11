@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { config } from "./config.js";
+import { config, envWithLocalVariables, REPO_ROOT } from "./config.js";
 import { ingestRunFile } from "./ingest.js";
 
 export interface RunRequest {
@@ -77,7 +77,8 @@ export function startRun(req: RunRequest): Job {
   if (req.requireInference) args.push("--require-inference");
 
   const child = spawn(config.pythonBin, args, {
-    cwd: config.pipelineOutputDir.replace(/\/[^/]+$/, "") || ".",
+    cwd: REPO_ROOT,
+    env: envWithLocalVariables(),
   });
 
   let stdout = "";

@@ -51,8 +51,9 @@ Open http://localhost:5173.
 ## Getting real data in
 
 The dashboard reads what `tools/competitor_monitor.py` produces. To enable LLM
-classification/digests from dashboard-triggered runs, set `OPENAI_API_KEY` in the
-repo-root `.env` (or in the backend process environment).
+classification/digests from dashboard-triggered runs, copy `local/.env.example`
+to `local/.env` at the repo root and set `OPENAI_API_KEY` there (or set it in
+the backend process environment). `local/.env` is ignored by git.
 
 - **Manual trigger (UI/API):** `POST /api/runs` spawns the pipeline and ingests
   the result automatically (async — poll `GET /api/runs/jobs/:id`). The UI
