@@ -26,9 +26,18 @@ from dotenv import load_dotenv
 
 from inference import get_inference_client
 
-# Load .env from project root (parent of tools/)
-load_dotenv(Path(__file__).parent.parent / ".env")
-load_dotenv()  # also check cwd
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def load_environment(repo_root=REPO_ROOT, include_cwd=True):
+    """Load local, non-committed environment variables for the pipeline."""
+    load_dotenv(repo_root / "local" / ".env")
+    load_dotenv(repo_root / ".env")
+    if include_cwd:
+        load_dotenv()  # also check cwd
+
+
+load_environment()
 
 
 # =============================================================================

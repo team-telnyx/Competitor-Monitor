@@ -1,5 +1,7 @@
 .tmp/
 .env
+local/*
+!local/.env.example
 .venv/
 __pycache__/
 *.pyc

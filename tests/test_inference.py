@@ -1,5 +1,6 @@
 import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -23,6 +24,21 @@ class InferenceLayerTests(unittest.TestCase):
     def test_get_inference_client_returns_none_without_openai_key(self):
         with patch.dict(os.environ, {}, clear=True):
             self.assertIsNone(inference.get_inference_client())
+
+    def test_pipeline_loads_local_env_file_without_overriding_process_env(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            local_dir = repo_root / "local"
+            local_dir.mkdir()
+            (local_dir / ".env").write_text(
+                "OPENAI_API_KEY=local-test-key\nOPENAI_MODEL=local-test-model\n"
+            )
+
+            with patch.dict(os.environ, {"OPENAI_MODEL": "process-model"}, clear=True):
+                competitor_monitor.load_environment(repo_root, include_cwd=False)
+
+                self.assertEqual(os.environ["OPENAI_API_KEY"], "local-test-key")
+                self.assertEqual(os.environ["OPENAI_MODEL"], "process-model")
 
     def test_classify_pages_falls_back_without_openai_key(self):
         pages = [
