@@ -46,6 +46,9 @@ SENDGRID_SENDER_EMAIL=...      # Email sender
 # Full run: scrape, classify, summarize, post to Slack
 python tools/competitor_monitor.py
 
+# Refresh one competitor and fail fast if inference is not configured
+python tools/competitor_monitor.py --competitor ElevenLabs --require-inference --no-slack
+
 # Skip LLM (raw results only)
 python tools/competitor_monitor.py --no-classify
 

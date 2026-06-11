@@ -68,6 +68,31 @@ export interface Filters {
   page?: number;
 }
 
+export interface RunJob {
+  id: string;
+  status: "running" | "succeeded" | "failed";
+  startedAt: string;
+  finishedAt?: string;
+  runId?: number;
+  pagesIngested?: number;
+  relevant?: number;
+  error?: string;
+  log: string[];
+}
+
+export interface StartRunRequest {
+  hours?: number;
+  competitor?: string;
+  noSlack?: boolean;
+  noClassify?: boolean;
+  requireInference?: boolean;
+}
+
+export interface StartRunResponse {
+  jobId: string;
+  status: RunJob["status"];
+}
+
 export const CATEGORIES = [
   "AI Assistants",
   "Inference",

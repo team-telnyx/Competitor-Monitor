@@ -55,7 +55,10 @@ classification/digests from dashboard-triggered runs, set `OPENAI_API_KEY` in th
 repo-root `.env` (or in the backend process environment).
 
 - **Manual trigger (UI/API):** `POST /api/runs` spawns the pipeline and ingests
-  the result automatically (async — poll `GET /api/runs/jobs/:id`).
+  the result automatically (async — poll `GET /api/runs/jobs/:id`). The UI
+  Refresh button uses `requireInference=true` and `noSlack=true`, so it fails
+  fast if `OPENAI_API_KEY` is missing instead of archiving unclassified pages.
+  If a competitor filter is selected, it refreshes only that competitor.
 - **Scheduled (cron):** run the pipeline as usual, then ingest its artifact:
   ```bash
   cd dashboard/backend

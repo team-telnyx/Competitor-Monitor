@@ -4,8 +4,10 @@ import { ingestRunFile } from "./ingest.js";
 
 export interface RunRequest {
   hours?: number;
+  competitor?: string;
   noSlack?: boolean;
   noClassify?: boolean;
+  requireInference?: boolean;
 }
 
 export type JobStatus = "running" | "succeeded" | "failed";
@@ -37,6 +39,16 @@ export function listJobs(): Job[] {
   );
 }
 
+function logTail(job: Job): string {
+  return job.log
+    .join("")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(-2)
+    .join(" ");
+}
+
 /**
  * Kick off a pipeline run as a detached async job. Returns immediately with a
  * job whose status can be polled at GET /api/runs/jobs/:id (PRD §7: async job +
@@ -59,8 +71,10 @@ export function startRun(req: RunRequest): Job {
     "--output-dir",
     config.pipelineOutputDir,
   ];
+  if (req.competitor) args.push("--competitor", req.competitor);
   if (req.noSlack) args.push("--no-slack");
   if (req.noClassify) args.push("--no-classify");
+  if (req.requireInference) args.push("--require-inference");
 
   const child = spawn(config.pythonBin, args, {
     cwd: config.pipelineOutputDir.replace(/\/[^/]+$/, "") || ".",
@@ -85,7 +99,8 @@ export function startRun(req: RunRequest): Job {
   child.on("close", async (code) => {
     if (code !== 0) {
       job.status = "failed";
-      job.error = `Pipeline exited with code ${code}`;
+      const tail = logTail(job);
+      job.error = `Pipeline exited with code ${code}${tail ? `: ${tail}` : ""}`;
       job.finishedAt = new Date().toISOString();
       return;
     }

@@ -47,8 +47,12 @@ runsRouter.get("/", async (req, res) => {
 
 const triggerSchema = z.object({
   hours: z.number().int().positive().max(24 * 90).optional(),
+  competitor: z.string().min(1).optional(),
   noSlack: z.boolean().optional(),
   noClassify: z.boolean().optional(),
+  requireInference: z.boolean().optional(),
+}).refine((v) => !(v.noClassify && v.requireInference), {
+  message: "requireInference cannot be used with noClassify",
 });
 
 /** POST /api/runs — trigger a manual run (async). Returns a job to poll. */

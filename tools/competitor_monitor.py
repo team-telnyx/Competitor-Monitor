@@ -507,6 +507,23 @@ def generate_digest(all_results):
         return None
 
 
+def select_competitors(competitors, names=None):
+    """Return competitor configs matching one or more case-insensitive names."""
+    if not names:
+        return competitors
+
+    requested = {name.strip().lower() for name in names if name and name.strip()}
+    selected = [c for c in competitors if c["name"].lower() in requested]
+    found = {c["name"].lower() for c in selected}
+    missing = sorted(requested - found)
+    if missing:
+        available = ", ".join(c["name"] for c in competitors)
+        raise ValueError(
+            f"Unknown competitor(s): {', '.join(missing)}. Available: {available}"
+        )
+    return selected
+
+
 # =============================================================================
 # Output formatting
 # =============================================================================
@@ -645,7 +662,7 @@ def send_to_slack(blocks, channel=None):
 # =============================================================================
 
 def run_monitor(competitors=None, hours=24, scrape=True, classify=True,
-                slack=True, email_to=None, output_dir=".tmp"):
+                slack=True, email_to=None, output_dir=".tmp", require_inference=False):
     """
     Main monitoring function.
 
@@ -657,12 +674,19 @@ def run_monitor(competitors=None, hours=24, scrape=True, classify=True,
         slack: Whether to send Slack notification
         email_to: Email address to send results to (None = skip)
         output_dir: Directory for JSON output
+        require_inference: Fail instead of falling back when no inference client is configured
 
     Returns:
         List of results per competitor
     """
     if competitors is None:
         competitors = COMPETITORS
+
+    if classify and require_inference and not get_inference_client():
+        raise RuntimeError(
+            "OPENAI_API_KEY is required when --require-inference is used. "
+            "Set it in the environment or repo-root .env."
+        )
 
     all_results = []
 
@@ -818,13 +842,16 @@ def main():
 Examples:
   python tools/competitor_monitor.py
   python tools/competitor_monitor.py --hours 48
+  python tools/competitor_monitor.py --competitor ElevenLabs --require-inference --no-slack
   python tools/competitor_monitor.py --no-slack --no-classify
         """,
     )
 
+    parser.add_argument("--competitor", action="append", help="Run only the named competitor (repeatable)")
     parser.add_argument("--hours", type=int, default=24, help="Look-back window in hours (default: 24)")
     parser.add_argument("--no-scrape", action="store_true", help="Skip scraping page content")
     parser.add_argument("--no-classify", action="store_true", help="Skip LLM classification and summarization")
+    parser.add_argument("--require-inference", action="store_true", help="Fail if LLM inference is not configured")
     parser.add_argument("--no-slack", action="store_true", help="Skip sending Slack notification")
     parser.add_argument("--email", type=str, default=None, help="Email address to send results to")
     parser.add_argument("--output-dir", default=".tmp", help="Directory for JSON output (default: .tmp)")
@@ -832,14 +859,21 @@ Examples:
 
     args = parser.parse_args()
 
-    results = run_monitor(
-        hours=args.hours,
-        scrape=not args.no_scrape,
-        classify=not args.no_classify,
-        slack=not args.no_slack,
-        email_to=args.email,
-        output_dir=args.output_dir,
-    )
+    try:
+        selected_competitors = select_competitors(COMPETITORS, args.competitor)
+        results = run_monitor(
+            competitors=selected_competitors,
+            hours=args.hours,
+            scrape=not args.no_scrape,
+            classify=not args.no_classify,
+            slack=not args.no_slack,
+            email_to=args.email,
+            output_dir=args.output_dir,
+            require_inference=args.require_inference,
+        )
+    except (RuntimeError, ValueError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
     if args.json_only:
         print(json.dumps(results, indent=2, default=str))

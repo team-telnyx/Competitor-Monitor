@@ -38,6 +38,24 @@ class InferenceLayerTests(unittest.TestCase):
         self.assertEqual(classified[0]["classification"]["category"], "unclassified")
         self.assertTrue(classified[0]["classification"]["relevant"])
 
+    def test_require_inference_fails_without_openai_key(self):
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(RuntimeError):
+                competitor_monitor.run_monitor(
+                    competitors=[],
+                    classify=True,
+                    slack=False,
+                    require_inference=True,
+                )
+
+    def test_select_competitors_by_name(self):
+        selected = competitor_monitor.select_competitors(
+            competitor_monitor.COMPETITORS,
+            ["elevenlabs"],
+        )
+
+        self.assertEqual([c["name"] for c in selected], ["ElevenLabs"])
+
     def test_openai_client_parses_classification_response(self):
         class FakeResponse:
             def raise_for_status(self):
