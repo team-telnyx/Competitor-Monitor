@@ -1,0 +1,131 @@
+// Competitor Intelligence Dashboard — data model (PRD §6)
+//
+// Default datasource is SQLite for zero-setup local dev. To move to Postgres
+// (PRD §10 hosting), change `provider` to "postgresql" and point DATABASE_URL
+// at your instance, then run `prisma db push`. The model is portable as-is;
+// Json columns map to jsonb on Postgres.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Competitor {
+  id              Int      @id @default(autoincrement())
+  name            String   @unique
+  // JSON-encoded string[] (SQLite has no native JSON; becomes jsonb on Postgres)
+  sitemapUrls     String   @map("sitemap_urls")
+  includePatterns String   @map("include_patterns")
+  excludePatterns String   @map("exclude_patterns")
+  useSnapshotDiff Boolean  @default(false) @map("use_snapshot_diff")
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  runCompetitors RunCompetitor[]
+  pages          Page[]
+  snapshots      Snapshot[]
+
+  @@map("competitors")
+}
+
+model Run {
+  id           Int       @id @default(autoincrement())
+  startedAt    DateTime  @default(now()) @map("started_at")
+  finishedAt   DateTime? @map("finished_at")
+  hoursWindow  Int       @map("hours_window")
+  // status: success | partial | failed | running
+  status       String    @default("running")
+  // trigger: scheduled | manual
+  trigger      String    @default("scheduled")
+  digestText   String?   @map("digest_text")
+  slackStatus  String?   @map("slack_status")
+  emailStatus  String?   @map("email_status")
+  errorSummary String?   @map("error_summary")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  runCompetitors RunCompetitor[]
+  firstSeenPages Page[]          @relation("FirstSeenRun")
+
+  @@map("runs")
+}
+
+model RunCompetitor {
+  id               Int       @id @default(autoincrement())
+  runId            Int       @map("run_id")
+  competitorId     Int       @map("competitor_id")
+  totalSitemapUrls Int       @default(0) @map("total_sitemap_urls")
+  newPageCount     Int       @default(0) @map("new_page_count")
+  relevantCount    Int       @default(0) @map("relevant_count")
+  checkedAt        DateTime? @map("checked_at")
+  // status: success | failed
+  status           String    @default("success")
+  error            String?
+
+  run        Run        @relation(fields: [runId], references: [id], onDelete: Cascade)
+  competitor Competitor @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+  pages      Page[]
+
+  @@unique([runId, competitorId])
+  @@map("run_competitors")
+}
+
+model Page {
+  id              Int       @id @default(autoincrement())
+  runCompetitorId Int       @map("run_competitor_id")
+  competitorId    Int       @map("competitor_id")
+  url             String
+  lastmod         DateTime?
+  // detection_source: snapshot_diff | lastmod
+  detectionSource String?   @map("detection_source")
+  title           String?
+  description     String?
+  textPreview     String?   @map("text_preview")
+  textLength      Int?      @map("text_length")
+  firstSeenRunId  Int?      @map("first_seen_run_id")
+  scrapedAt       DateTime? @map("scraped_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  runCompetitor  RunCompetitor   @relation(fields: [runCompetitorId], references: [id], onDelete: Cascade)
+  competitor     Competitor      @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+  firstSeenRun   Run?            @relation("FirstSeenRun", fields: [firstSeenRunId], references: [id])
+  classification Classification?
+
+  // Dedupe pages by (competitor, url) so a re-detected URL is one archive item (PRD §6).
+  @@unique([competitorId, url])
+  @@index([scrapedAt])
+  @@map("pages")
+}
+
+model Classification {
+  id           Int      @id @default(autoincrement())
+  pageId       Int      @unique @map("page_id")
+  relevant     Boolean  @default(false)
+  // category: AI Assistants | Inference | STT | TTS | Other AI/Voice | Not Relevant | unclassified
+  category     String?
+  summary      String?
+  model        String?
+  classifiedAt DateTime @default(now()) @map("classified_at")
+
+  page Page @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@index([category])
+  @@map("classifications")
+}
+
+model Snapshot {
+  id           Int      @id @default(autoincrement())
+  competitorId Int      @map("competitor_id")
+  // JSON-encoded string[]
+  urls         String
+  urlCount     Int      @map("url_count")
+  savedAt      DateTime @default(now()) @map("saved_at")
+
+  competitor Competitor @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+
+  @@map("snapshots")
+}
