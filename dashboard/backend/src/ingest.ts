@@ -34,6 +34,10 @@ interface PipelineResult {
 export interface PipelineOutput {
   results: PipelineResult[];
   digest?: string | null;
+  inference?: {
+    provider?: string;
+    model?: string;
+  } | null;
   scan_time?: string;
   hours?: number;
 }
@@ -50,8 +54,6 @@ function detectionSourceFor(page: PipelinePage): string | null {
   return null;
 }
 
-const MODEL = "claude-haiku-4-5-20251001";
-
 export interface IngestOptions {
   trigger?: "scheduled" | "manual";
   slackStatus?: string | null;
@@ -66,6 +68,9 @@ export async function ingestRunData(
 ): Promise<{ runId: number; pages: number; relevant: number }> {
   const scanTime = parseDate(data.scan_time) ?? new Date();
   const results = data.results ?? [];
+  const model = [data.inference?.provider, data.inference?.model]
+    .filter(Boolean)
+    .join(":") || "unknown";
 
   let totalPages = 0;
   let totalRelevant = 0;
@@ -166,13 +171,13 @@ export async function ingestRunData(
           relevant: cls.relevant ?? false,
           category: cls.category ?? null,
           summary: cls.summary ?? null,
-          model: MODEL,
+          model,
         },
         update: {
           relevant: cls.relevant ?? false,
           category: cls.category ?? null,
           summary: cls.summary ?? null,
-          model: MODEL,
+          model,
         },
       });
 
