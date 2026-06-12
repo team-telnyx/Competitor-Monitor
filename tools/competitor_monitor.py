@@ -188,16 +188,12 @@ COMPETITORS = [
     },
     {
         "name": "Modal",
-        # No public sitemap.xml (robots.txt lists none; /sitemap.xml 404s).
-        # Snapshot-diff still works once a sitemap is available; until then this
-        # competitor yields no entries and needs a page-crawl adapter (see PR notes).
-        "sitemap_urls": ["https://modal.com/sitemap.xml"],
-        "include_patterns": [
-            r"modal\.com/blog/",
-            r"modal\.com/docs/",
-        ],
+        # Modal publishes no sitemap.xml, but its blog exposes a dated Atom feed.
+        # parse_atom_feed() normalizes entries to {url, lastmod}, so Modal uses
+        # standard lastmod time-window detection like the other feed/sitemap sites.
+        "sitemap_urls": ["https://modal.com/blog/atom.xml"],
+        "include_patterns": [],
         "exclude_patterns": [r"/careers", r"/legal", r"/terms", r"/privacy"],
-        "use_snapshot_diff": True,
     },
     {
         "name": "Replicate",
@@ -244,6 +240,51 @@ def _findall(parent, local_name):
     return els
 
 
+def _local(el):
+    """Local tag name with any XML namespace stripped."""
+    return el.tag.split("}")[-1] if "}" in el.tag else el.tag
+
+
+def parse_atom_feed(root):
+    """Parse an Atom feed (<feed><entry>) into {url, lastmod} entries.
+
+    Used for competitors that publish a blog/news feed but no sitemap (e.g. Modal).
+    The <updated>/<published> timestamp acts as the page's lastmod, so feed-backed
+    competitors can use the normal lastmod time-window filtering.
+    """
+    entries = []
+    for entry in (e for e in root if _local(e) == "entry"):
+        href = None
+        for child in entry:
+            if _local(child) != "link":
+                continue
+            rel = child.get("rel", "alternate")
+            if child.get("href") and rel in ("alternate", ""):
+                href = child.get("href")
+                break
+        updated = None
+        for key in ("updated", "published"):
+            el = next((c for c in entry if _local(c) == key and c.text), None)
+            if el is not None:
+                updated = el.text.strip()
+                break
+        if href:
+            entries.append({"url": href.strip(), "lastmod": updated})
+    return entries
+
+
+def parse_rss_feed(root):
+    """Parse an RSS feed (<rss><channel><item>) into {url, lastmod} entries."""
+    entries = []
+    for channel in (c for c in root if _local(c) == "channel"):
+        for item in (i for i in channel if _local(i) == "item"):
+            link = next((c.text.strip() for c in item if _local(c) == "link" and c.text), None)
+            pub = next((c.text.strip() for c in item if _local(c) == "pubDate" and c.text), None)
+            if link:
+                entries.append({"url": link, "lastmod": pub})
+    return entries
+
+
 def fetch_sitemap(url, timeout=30):
     """Fetch and parse a sitemap XML file. Returns list of URL entries."""
     try:
@@ -274,6 +315,12 @@ def fetch_sitemap(url, timeout=30):
         for child_url in child_sitemaps:
             all_entries.extend(fetch_sitemap(child_url, timeout))
         return all_entries
+
+    # Handle Atom / RSS feeds (for competitors with a blog feed but no sitemap)
+    if tag == "feed":
+        return parse_atom_feed(root)
+    if tag == "rss":
+        return parse_rss_feed(root)
 
     # Handle regular sitemap (contains URL entries)
     entries = []

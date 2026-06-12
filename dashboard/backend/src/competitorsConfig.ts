@@ -112,13 +112,13 @@ export const COMPETITOR_SEED: CompetitorSeed[] = [
     useSnapshotDiff: true,
   },
   {
-    // No public sitemap.xml yet (robots.txt lists none; /sitemap.xml 404s).
-    // Needs a page-crawl adapter until a sitemap is published — see PR notes.
+    // No sitemap.xml, but the blog exposes a dated Atom feed; the pipeline's
+    // parse_atom_feed() treats <updated> as lastmod, so Modal uses lastmod mode.
     name: "Modal",
-    sitemapUrls: ["https://modal.com/sitemap.xml"],
-    includePatterns: ["modal\\.com/blog/", "modal\\.com/docs/"],
+    sitemapUrls: ["https://modal.com/blog/atom.xml"],
+    includePatterns: [],
     excludePatterns: ["/careers", "/legal", "/terms", "/privacy"],
-    useSnapshotDiff: true,
+    useSnapshotDiff: false,
   },
   {
     // sitemap.xml is a sitemap index; the pipeline recurses into child sitemaps.
