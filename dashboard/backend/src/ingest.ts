@@ -7,8 +7,14 @@ import { prisma } from "./db.js";
  */
 interface PipelineClassification {
   relevant?: boolean;
+  relevance_score?: number | null;
+  signal_type?: string;
+  product?: string;
+  product_known?: boolean;
   category?: string;
   summary?: string;
+  reasoning?: string;
+  rubric_version?: string;
 }
 interface PipelineScraped {
   title?: string;
@@ -164,22 +170,40 @@ export async function ingestRunData(
         },
       });
 
+      const classificationFields = {
+        relevant: cls.relevant ?? false,
+        relevanceScore: cls.relevance_score ?? null,
+        signalType: cls.signal_type ?? null,
+        product: cls.product || null,
+        category: cls.category ?? null,
+        summary: cls.summary ?? null,
+        reasoning: cls.reasoning ?? null,
+        rubricVersion: cls.rubric_version ?? null,
+        model,
+      };
       await prisma.classification.upsert({
         where: { pageId: pageRow.id },
-        create: {
-          pageId: pageRow.id,
-          relevant: cls.relevant ?? false,
-          category: cls.category ?? null,
-          summary: cls.summary ?? null,
-          model,
-        },
-        update: {
-          relevant: cls.relevant ?? false,
-          category: cls.category ?? null,
-          summary: cls.summary ?? null,
-          model,
-        },
+        create: { pageId: pageRow.id, ...classificationFields },
+        update: classificationFields,
       });
+
+      // An unknown product the model named becomes a candidate for operator review
+      // (docs/inference-training.md §3) — never overwrites a confirmed product.
+      if (cls.product && cls.product_known === false) {
+        await prisma.product.upsert({
+          where: {
+            competitorId_name: { competitorId: competitor.id, name: cls.product },
+          },
+          update: {},
+          create: {
+            competitorId: competitor.id,
+            name: cls.product,
+            category: cls.category ?? null,
+            status: "candidate",
+            firstSeenPageId: pageRow.id,
+          },
+        });
+      }
 
       // Mark whether this was genuinely new this run (for logging/debug only).
       void existing;

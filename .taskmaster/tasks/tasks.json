@@ -1,0 +1,99 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Categories tab — browse + trends by category",
+        "description": "New /categories page: pick a focus-area category and see its feed across all competitors plus volume/momentum over time.",
+        "status": "done",
+        "priority": "high",
+        "dependencies": [],
+        "details": "Frontend CategoriesPage + route + nav (nav link already present). Reuse GET /api/pages?category=&relevant=true for the feed and GET /api/analytics/activity (per-category series) for the trend. Lightweight inline bar chart (no charting dep). Category color map from db.ts.",
+        "testStrategy": "Load /categories, switch categories, confirm feed + trend reflect /api/pages and /api/analytics/activity for that category.",
+        "subtasks": []
+      },
+      {
+        "id": 2,
+        "title": "Competitors tab — recent high-relevance activity",
+        "description": "Per-competitor overview of newest high-relevance (score >= 70) new_product/new_feature items, with counts and momentum.",
+        "status": "done",
+        "priority": "high",
+        "dependencies": [],
+        "details": "Backend GET /api/competitors/overview returning per-competitor recent high-score items + counts. Frontend CompetitorsPage top half. Links into the Feed.",
+        "testStrategy": "Load /competitors; each competitor shows its recent score>=70 items matching the DB.",
+        "subtasks": []
+      },
+      {
+        "id": 3,
+        "title": "Telnyx offerings catalog + offering_comparisons schema & API",
+        "description": "Data model + endpoints for the competitor-vs-Telnyx offering map. Catalog seeded later from an internal de facto list.",
+        "status": "done",
+        "priority": "medium",
+        "dependencies": [],
+        "details": "Prisma: telnyx_offerings (name, category, description) and offering_comparisons (competitorId, focusArea, competitorProductId?, telnyxOfferingId?, verdict, rationale, source, editedBy). CRUD endpoints. Empty-catalog-aware (UI shows an enable-when-populated state).",
+        "testStrategy": "Create/list/patch offerings and comparisons via curl; empty catalog returns a clean empty state.",
+        "subtasks": []
+      },
+      {
+        "id": 4,
+        "title": "Competitor↔Telnyx offering map UI (editable matrix)",
+        "description": "Bottom half of the Competitors tab: a per-competitor matrix of products vs Telnyx offerings with parity verdicts, operator-editable.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": [3],
+        "details": "Matrix by focus area; edit verdict/counterpart/notes; edits override generated values. Admin-gate later.",
+        "testStrategy": "With offerings present, render and edit a comparison; edit persists and is flagged source=manual.",
+        "subtasks": []
+      },
+      {
+        "id": 5,
+        "title": "Inference generation of offering comparisons",
+        "description": "Generate each competitor product's Telnyx counterpart + parity verdict via the inference layer.",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": [3, 4],
+        "details": "Prompt the inference layer with competitor products + Telnyx offerings to propose verdicts/rationale; store source=inference; operator edits override.",
+        "testStrategy": "Run generation for one competitor; comparisons populated with rationale; re-run does not clobber manual edits.",
+        "subtasks": []
+      },
+      {
+        "id": 6,
+        "title": "Ops console completion + auth/role gating",
+        "description": "Finish run-history/health/error surfacing UI and introduce the admin role boundary (approvals, Telnyx-map edits, classification overrides).",
+        "status": "pending",
+        "priority": "medium",
+        "dependencies": [],
+        "details": "Auth provider (Telnyx SSO or gateway); gate admin actions; enforce requestedBy/resolvedBy on approvals.",
+        "testStrategy": "Non-admin blocked from approve/edit; admin allowed.",
+        "subtasks": []
+      },
+      {
+        "id": 7,
+        "title": "Slack deep links + delivery status",
+        "description": "Add View-in-dashboard deep links to Slack digest blocks and surface delivery status in the dashboard.",
+        "status": "pending",
+        "priority": "low",
+        "dependencies": [],
+        "details": "Per-run and per-item links; show sent/failed/channel.",
+        "testStrategy": "Digest links resolve to run/item views; status shown.",
+        "subtasks": []
+      },
+      {
+        "id": 8,
+        "title": "Automations (Training D) consuming relevance_score",
+        "description": "Downstream actions gated on confidence — e.g. alert/ticket on high-confidence new products; route uncertain items to the training queue.",
+        "status": "pending",
+        "priority": "low",
+        "dependencies": [2],
+        "details": "Confidence-gated triggers on relevance_score >= threshold + matching rules; uncertain -> queue.",
+        "testStrategy": "High-confidence new_product fires the action; borderline routes to queue, not the action.",
+        "subtasks": []
+      }
+    ],
+    "metadata": {
+      "created": "2026-06-12T00:00:00.000Z",
+      "updated": "2026-06-12T00:00:00.000Z",
+      "description": "Planned items from docs/dashboard_prd.md (post Phase-1 + Training A-C)."
+    }
+  }
+}

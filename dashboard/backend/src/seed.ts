@@ -1,5 +1,7 @@
 import { prisma, encodeJson } from "./db.js";
 import { COMPETITOR_SEED } from "./competitorsConfig.js";
+import { PRODUCT_CATALOG } from "./productCatalog.js";
+import { TELNYX_OFFERINGS } from "./telnyxOfferings.js";
 import { ingestRunData, type PipelineOutput } from "./ingest.js";
 
 /** Seed competitor config from the mirrored pipeline list. */
@@ -18,6 +20,48 @@ async function seedCompetitors() {
     });
   }
   console.log(`Seeded ${COMPETITOR_SEED.length} competitors.`);
+}
+
+/** Seed the draft product registry. Upserts known products; never demotes an
+ *  operator-confirmed one (status is only set on create). */
+async function seedProducts() {
+  let count = 0;
+  for (const [competitorName, products] of Object.entries(PRODUCT_CATALOG)) {
+    const competitor = await prisma.competitor.findUnique({
+      where: { name: competitorName },
+      select: { id: true },
+    });
+    if (!competitor) continue;
+    for (const p of products) {
+      await prisma.product.upsert({
+        where: { competitorId_name: { competitorId: competitor.id, name: p.name } },
+        update: { category: p.category, aliases: encodeJson(p.aliases ?? []) },
+        create: {
+          competitorId: competitor.id,
+          name: p.name,
+          category: p.category,
+          aliases: encodeJson(p.aliases ?? []),
+          status: "active",
+        },
+      });
+      count++;
+    }
+  }
+  console.log(
+    `Seeded ${count} products across ${Object.keys(PRODUCT_CATALOG).length} competitors.`,
+  );
+}
+
+/** Seed the Telnyx offerings catalog (idempotent upsert by name). */
+async function seedTelnyxOfferings() {
+  for (const o of TELNYX_OFFERINGS) {
+    await prisma.telnyxOffering.upsert({
+      where: { name: o.name },
+      update: { category: o.category },
+      create: { name: o.name, category: o.category },
+    });
+  }
+  console.log(`Seeded ${TELNYX_OFFERINGS.length} Telnyx offerings.`);
 }
 
 /**
@@ -110,6 +154,8 @@ const DEMO_RUN: PipelineOutput = {
 async function main() {
   const demo = process.argv.includes("--demo");
   await seedCompetitors();
+  await seedProducts();
+  await seedTelnyxOfferings();
   if (demo) {
     const r = await ingestRunData(DEMO_RUN, { trigger: "scheduled", slackStatus: "sent" });
     console.log(

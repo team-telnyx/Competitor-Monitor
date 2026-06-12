@@ -6,6 +6,12 @@ import { pagesRouter } from "./routes/pages.js";
 import { runsRouter } from "./routes/runs.js";
 import { competitorsRouter } from "./routes/competitors.js";
 import { analyticsRouter } from "./routes/analytics.js";
+import { feedbackRouter } from "./routes/feedback.js";
+import { productsRouter } from "./routes/products.js";
+import { guidanceRouter } from "./routes/guidance.js";
+import { removalRequestsRouter } from "./routes/removalRequests.js";
+import { policyRouter } from "./routes/policy.js";
+import { offeringsRouter } from "./routes/offerings.js";
 
 const app = express();
 app.use(cors());
@@ -24,6 +30,12 @@ app.use("/api/pages", pagesRouter);
 app.use("/api/runs", runsRouter);
 app.use("/api/competitors", competitorsRouter);
 app.use("/api/analytics", analyticsRouter);
+app.use("/api/feedback", feedbackRouter);
+app.use("/api/products", productsRouter);
+app.use("/api/guidance", guidanceRouter);
+app.use("/api/removal-requests", removalRequestsRouter);
+app.use("/api/policy", policyRouter);
+app.use("/api/offerings", offeringsRouter);
 
 // Centralized error handler so route throws return JSON, not HTML.
 app.use(

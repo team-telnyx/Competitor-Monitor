@@ -48,9 +48,18 @@ export function envWithLocalVariables(): NodeJS.ProcessEnv {
   };
 }
 
+// Prefer an explicit PYTHON_BIN, then a repo-local virtualenv (so the pipeline's
+// dependencies are guaranteed present regardless of the shell's PATH), then python3.
+function resolvePythonBin(): string {
+  if (process.env.PYTHON_BIN) return process.env.PYTHON_BIN;
+  const venvPython = path.resolve(REPO_ROOT, ".venv", "bin", "python");
+  if (fs.existsSync(venvPython)) return venvPython;
+  return "python3";
+}
+
 export const config = {
   port: Number(process.env.PORT ?? 4000),
-  pythonBin: process.env.PYTHON_BIN ?? "python3",
+  pythonBin: resolvePythonBin(),
   pipelineScript: path.resolve(
     REPO_ROOT,
     process.env.PIPELINE_SCRIPT ?? "tools/competitor_monitor.py",

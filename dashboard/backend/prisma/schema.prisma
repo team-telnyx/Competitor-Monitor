@@ -21,6 +21,9 @@ model Competitor {
   sitemapUrls     String   @map("sitemap_urls")
   includePatterns String   @map("include_patterns")
   excludePatterns String   @map("exclude_patterns")
+  // JSON-encoded string[] of subdomain hostnames to skip (e.g. "community.elevenlabs.io").
+  // A URL is dropped if its host equals or is a subdomain of any entry.
+  ignoredSubdomains String @default("[]") @map("ignored_subdomains")
   useSnapshotDiff Boolean  @default(false) @map("use_snapshot_diff")
   active          Boolean  @default(true)
   createdAt       DateTime @default(now()) @map("created_at")
@@ -29,6 +32,11 @@ model Competitor {
   runCompetitors RunCompetitor[]
   pages          Page[]
   snapshots      Snapshot[]
+  products       Product[]
+  feedback       Feedback[]
+  guidance        Guidance[]
+  removalRequests RemovalRequest[]
+  offeringComparisons OfferingComparison[]
 
   @@map("competitors")
 }
@@ -94,6 +102,7 @@ model Page {
   competitor     Competitor      @relation(fields: [competitorId], references: [id], onDelete: Cascade)
   firstSeenRun   Run?            @relation("FirstSeenRun", fields: [firstSeenRunId], references: [id])
   classification Classification?
+  feedback       Feedback[]
 
   // Dedupe pages by (competitor, url) so a re-detected URL is one archive item (PRD §6).
   @@unique([competitorId, url])
@@ -105,16 +114,149 @@ model Classification {
   id           Int      @id @default(autoincrement())
   pageId       Int      @unique @map("page_id")
   relevant     Boolean  @default(false)
+  // 0–100 confidence that the page reports a new product / new feature (see docs/inference-training.md §2).
+  relevanceScore Int?   @map("relevance_score")
+  // signal_type: new_product | new_feature | update | tangential | irrelevant
+  signalType   String?  @map("signal_type")
+  // The product the page is about (canonicalized against the Product registry when known).
+  product      String?
   // category: AI Assistants | Inference | STT | TTS | Other AI/Voice | Not Relevant | unclassified
   category     String?
   summary      String?
+  // Model's justification for the score (operator-facing; drives the training loop).
+  reasoning    String?
   model        String?
+  // Rubric version this score was produced under, so we can detect drift / re-score.
+  rubricVersion String? @map("rubric_version")
   classifiedAt DateTime @default(now()) @map("classified_at")
 
   page Page @relation(fields: [pageId], references: [id], onDelete: Cascade)
 
   @@index([category])
   @@map("classifications")
+}
+
+// Per-competitor product catalog. Makes product/category recognition a lookup
+// (deterministic) rather than free generation. Unknown products from a run land
+// here as `candidate` for an operator to confirm (docs/inference-training.md §3).
+model Product {
+  id              Int      @id @default(autoincrement())
+  competitorId    Int      @map("competitor_id")
+  name            String
+  // category: AI Assistants | Inference | STT | TTS | Other AI/Voice
+  category        String?
+  // JSON-encoded string[] of alternative names the model may use for this product.
+  aliases         String   @default("[]")
+  // status: active | candidate | deprecated
+  status          String   @default("active")
+  firstSeenPageId Int?     @map("first_seen_page_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  competitor Competitor @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+
+  @@unique([competitorId, name])
+  @@map("products")
+}
+
+// Operator feedback on a page's classification — the durable record that feeds
+// back into future runs via derived rules + few-shot examples (Phases B/C).
+model Feedback {
+  id             Int      @id @default(autoincrement())
+  pageId         Int      @map("page_id")
+  competitorId   Int      @map("competitor_id")
+  // action: confirm | flag_irrelevant | recategorize | reassign_product
+  action         String
+  // reason_category: marketing | customer_story | careers_or_legal | wrong_subdomain |
+  //   duplicate | wrong_product | wrong_category | not_a_release | other
+  reasonCategory String?  @map("reason_category")
+  reason         String?
+  operator       String?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  page       Page       @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  competitor Competitor @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+
+  @@index([pageId])
+  @@map("feedback")
+}
+
+// Free-text operator guidance injected into the classifier prompt for "additional
+// consideration" (docs/inference-training.md §5). competitorId null = applies globally.
+model Guidance {
+  id           Int      @id @default(autoincrement())
+  competitorId Int?     @map("competitor_id")
+  text         String
+  active       Boolean  @default(true)
+  operator     String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  competitor Competitor? @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+
+  @@map("guidance")
+}
+
+// Request to drop something from consideration, gated by approval (admins TBD;
+// for now anyone can approve). On approval an endpoint is added to the competitor's
+// excludePatterns and a subdomain to its ignoredSubdomains, so it shows as removed
+// in Sources and future runs skip it.
+model RemovalRequest {
+  id           Int       @id @default(autoincrement())
+  competitorId Int       @map("competitor_id")
+  // kind: endpoint (→ excludePatterns) | subdomain (→ ignoredSubdomains)
+  kind         String    @default("endpoint")
+  // The target: a path/pattern for endpoint kind, a hostname for subdomain kind.
+  value        String?
+  host         String?
+  // status: pending | approved | rejected
+  status       String    @default("pending")
+  requestedBy  String?   @map("requested_by")
+  resolvedBy   String?   @map("resolved_by")
+  pageId       Int?      @map("page_id")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  resolvedAt   DateTime? @map("resolved_at")
+
+  competitor Competitor @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("removal_requests")
+}
+
+// The Telnyx side of the Competitors-tab offering map (PRD §5.2). Seeded from an
+// internal de facto list; the catalog content is independent of the machinery.
+model TelnyxOffering {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  category    String?
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  comparisons OfferingComparison[]
+
+  @@map("telnyx_offerings")
+}
+
+// One row per competitor product ↔ Telnyx offering comparison. Inference proposes
+// the verdict/rationale; operators can override (source flips to "manual").
+model OfferingComparison {
+  id                Int      @id @default(autoincrement())
+  competitorId      Int      @map("competitor_id")
+  focusArea         String?  @map("focus_area")
+  competitorProduct String?  @map("competitor_product")
+  telnyxOfferingId  Int?     @map("telnyx_offering_id")
+  // verdict: parity | gap | telnyx_ahead | competitor_ahead | none
+  verdict           String   @default("none")
+  rationale         String?
+  // source: inference | manual
+  source            String   @default("manual")
+  editedBy          String?  @map("edited_by")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  competitor     Competitor      @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+  telnyxOffering TelnyxOffering? @relation(fields: [telnyxOfferingId], references: [id], onDelete: SetNull)
+
+  @@map("offering_comparisons")
 }
 
 model Snapshot {
