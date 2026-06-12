@@ -1,156 +1,191 @@
 # PRD: Competitor Intelligence Dashboard
 
-**Status:** Draft
+**Status:** Living (Phase 1 + Training Phases A–C shipped; see §9)
 **Author:** Jake Johnson (jakej@telnyx.com)
-**Created:** 2026-06-10
-**Related:** [Competitor Monitor tool](../tools/competitor_monitor.py) · [Monitoring workflow](../workflows/competitor_monitoring.md) · Slack digest delivery (the "slackbot")
+**Created:** 2026-06-10 · **Updated:** 2026-06-12
+**Related:** [Competitor Monitor tool](../tools/competitor_monitor.py) · [Pipeline reference](./pipeline-reference.md) · [Inference Training & Relevance Policy](./inference-training.md) · [Generated relevance policy](./relevance-policy.md)
 
 ---
 
 ## 1. Summary
 
-The Competitor Monitor today runs as a daily Python job that scrapes competitor sitemaps, classifies new pages with Claude (AI Assistants / Inference / STT / TTS), generates an executive digest, and **pushes** it to Slack and email. There is no way to **pull** — every signal older than today's message is buried in timestamped JSON files under `.tmp/`.
+The Competitor Monitor scrapes competitor sitemaps, detects new pages, classifies them for AI/voice relevance, generates an executive digest, and pushes it to Slack/email. The dashboard gives that data a persistent, queryable home and adds the surfaces the daily push can't: history, search, analytics, **operator-driven classification refinement**, and a **competitor↔Telnyx product comparison**.
 
-This PRD specifies a web dashboard, built alongside the Slack delivery path, that gives the data a persistent home. It serves three jobs in one product:
+It serves four jobs in one product:
 
-1. **Browsable intel archive** — every detected update, searchable and filterable across all history.
-2. **Monitoring ops console** — pipeline health, failed sitemaps, snapshot baselines, manual run triggers, competitor management.
-3. **Competitive analysis hub** — trends, activity heatmaps, and focus-area momentum over time.
+1. **Browsable intel feed** — every detected update, scored, searchable, filterable across all history.
+2. **Monitoring ops console** — pipeline health, errors, manual run triggers, source/competitor management.
+3. **Competitive analysis** — per-category trends and a per-competitor offering map vs Telnyx.
+4. **Classification refinement ("training")** — operators correct, score, and tune what the inference layer considers relevant; that feedback measurably changes future runs.
 
-The Slack digest remains the daily *push*; the dashboard is the durable *pull* surface behind it. Every Slack message should deep-link into the dashboard.
+The Slack digest remains the daily *push*; the dashboard is the durable *pull* + *control* surface behind it.
+
+> **Inference note:** classification/digests run through the project's pluggable inference layer ([inference.py](../tools/inference.py)). It currently uses **OpenAI's models** — either an OpenAI API key, or a ChatGPT subscription via the Codex "Sign in with ChatGPT" OAuth path (default model `gpt-5.4-mini`). (Earlier drafts referenced Claude; that is no longer accurate.)
 
 ## 2. Background & problem
 
-The current pipeline ([`run_monitor`](../tools/competitor_monitor.py)) produces rich structured output per run:
+The pipeline ([`run_monitor`](../tools/competitor_monitor.py)) produces rich structured output per run, historically written to `.tmp/competitor_monitor_<timestamp>.json` and Slack, then effectively lost. The original gaps — no history, no search, no observability, no trends, no control surface — are addressed by Phase 1 (now shipped).
 
-- Per competitor: `total_sitemap_urls`, list of `new_pages`, `checked_at`
-- Per page: `url`, `lastmod`, detection `source` (`snapshot_diff` vs lastmod), scraped `{title, description, text_preview, text_length}`, and `classification {relevant, category, summary}`
-- Per run: the LLM `digest`, `scan_time`, look-back `hours`
+A second class of problem emerged once the dashboard was live: **classification quality and trust.**
 
-All of this is written to `.tmp/competitor_monitor_<timestamp>.json` and Slack, then effectively lost. Concrete gaps this creates:
+- The boolean `relevant` flag over-surfaced noise — customer stories, webinars, and careers pages were counted as "relevant."
+- There was no notion of **how strongly** a page signals a new product/feature, so nothing downstream (alerts, automations) could gate on confidence.
+- Operators had **no way to correct** a misclassification, mute a noisy site section, or steer the model — and no mechanism to make a correction *stick* across future runs.
+- Product/category recognition was free-form and drifted run to run.
 
-- **No history.** "What did ElevenLabs ship last quarter?" requires grepping JSON files.
-- **No search.** Can't find every TTS update across all competitors.
-- **No observability.** When a sitemap 404s or a snapshot baseline resets, it's a `stderr` line nobody sees. Snapshot-diff competitors silently return 0 on first run by design.
-- **No trends.** Can't see that a competitor's shipping cadence spiked, or which focus area is heating up.
-- **No control surface.** Adding a competitor means editing the `COMPETITORS` list in Python and redeploying.
+The **training/refinement** capability (§5.4) exists to close that gap deterministically; see [inference-training.md](./inference-training.md) for the full design.
 
 ## 3. Goals & non-goals
 
 ### Goals
-- Persist all monitor runs and detected pages in a queryable datastore (replacing `.tmp` JSON as the source of truth).
-- Browsable, searchable, filterable archive of every classified update.
-- Ops console: run history, per-competitor health, error surfacing, manual trigger, competitor CRUD.
-- Analytics: activity over time, per-competitor and per-focus-area trends, heatmaps.
-- Deep-linkable: Slack digest entries link to the corresponding dashboard view.
-- Serve both audiences — leadership-facing intel views and an admin/ops area, gated separately.
+- Persist all monitor runs and detected pages in a queryable datastore (the DB, not `.tmp` JSON, is the source of truth). *(Shipped)*
+- Browsable, searchable, filterable **feed** of every classified update, showing a 0–100 relevance score, signal type, product, and category. *(Shipped)*
+- **Relevance scoring** with a fixed, versioned rubric so downstream automations can gate on confidence. *(Shipped)*
+- **Operator refinement loop:** flag/correct classifications with reasons, confirm candidate products, add plain-text guidance, and remove noisy endpoints/subdomains — all feeding the next run. *(Shipped, Phases A–C)*
+- **Source/competitor management** without editing Python: competitors, sources, include/exclude rules, detection method, ignored subdomains. *(Shipped)*
+- **Competitor↔Telnyx offering map:** inference-generated, operator-editable comparison of each competitor's products against Telnyx's. *(Planned)*
+- **Category browse + trends.** *(Planned)*
+- Ops console: run history, per-competitor health, error surfacing, manual trigger. *(Partial)*
+- Role-gated **admin** actions (approvals, editing the Telnyx map, eventually classification overrides). *(Planned)*
 
 ### Non-goals (v1)
-- Replacing the scraping/classification pipeline — the dashboard reads what the existing tool produces; pipeline logic is unchanged except for writing to the DB.
-- Real-time streaming — daily (or on-demand) cadence is sufficient.
-- Multi-tenant / external customers — internal Telnyx tool only.
-- Editing or annotating Claude's classifications by hand (candidate for v2).
-- Linear ticket creation (separate roadmap item; dashboard should leave a hook for it).
+- Replacing the scraping/classification pipeline — the dashboard is the source of truth for *config* (competitors/sources/products/rules) and the pipeline reads it; detection/scraping logic is unchanged.
+- Real-time streaming — daily/on-demand cadence is sufficient.
+- **Multi-tenant / external customers** — internal Telnyx tool; no tenant isolation in the data model.
+- ~~Editing or annotating classifications by hand~~ → **now in scope** (the training capability; see §5.4).
 
 ## 4. Audiences & personas
 
 | Persona | Role | Primary surface | Needs |
 |---|---|---|---|
-| **Product leadership** (Max, Jake, strategy) | Consume intelligence | Archive feed + Analytics | Skimmable, insightful, trustworthy, fast to "what changed and why it matters" |
-| **Pipeline operator** (whoever runs/maintains it) | Operate & debug | Ops console | Run status, error visibility, manual control, competitor config |
+| **Product leadership** | Consume intelligence | Feed · Competitors · Categories | Skimmable, trustworthy, fast to "what changed and why it matters" |
+| **Analyst / operator** | Refine & operate | Training · Sources · Ops | Correct misclassifications, tune relevance, manage sources, trigger runs |
+| **Admin** (subset of operators; *group TBD*) | Approve & govern | Approvals · Telnyx map | Approve removals, edit the competitor↔Telnyx map, (later) override classifications |
 
-Both audiences hit the same app; the **ops/admin area is gated** (role-based) so leadership sees a clean intel product and operators get the control panel.
+The **admin** boundary is not yet enforced — today every user can perform admin actions (e.g. approving removals). The role gate is a planned addition; the workflows are already shaped around it (e.g. `requestedBy`/`resolvedBy` on removal requests).
 
-## 5. Scope & key flows
+## 5. Scope, navigation & key flows
 
-### 5.1 Intel archive (browse & search)
-- Reverse-chronological feed of relevant updates across all competitors.
-- Filters: competitor, focus area (AI Assistants / Inference / STT / TTS / Other), date range, detection source, relevance.
-- Full-text search across title, description, summary, and scraped preview.
-- Each item card shows: competitor, category badge (reuse existing color map — AI Assistants `#8e44ad`, Inference `#e67e22`, STT `#27ae60`, TTS `#2980b9`, Other `#7f8c8d`), title (links to source URL), Claude's one-line summary, detected date.
-- Item detail view: full scraped preview, classification, which run detected it, raw metadata.
-- Saved/archived digests: read any past run's executive digest as it was sent.
+The app is organized as a top-nav with five surfaces (plus a gated Ops area):
 
-### 5.2 Ops console
-- **Run history:** every monitor run with timestamp, duration, look-back window, competitors checked, new/relevant counts, status (success / partial / failed).
-- **Per-competitor health:** last successful check, last new page found, sitemap fetch status, detection method, snapshot baseline state and size, error count. Flag competitors that have returned 0 for an unusually long stretch (possible silent breakage).
-- **Error surfacing:** capture the warnings currently sent to `stderr` (sitemap fetch failures, parse errors, classification failures, Slack/email delivery errors) and display them per run.
-- **Manual trigger:** kick off a run from the UI (optionally scoped to one competitor, with a custom look-back window), mirroring the existing CLI flags (`--hours`, `--no-slack`, etc.).
-- **Competitor management:** CRUD over the competitor config that currently lives in the `COMPETITORS` list — name, sitemap URLs, include/exclude regex patterns, `use_snapshot_diff` toggle. Validate regex on save.
+```
+Feed · Competitors · Categories · Training · Sources
+```
 
-### 5.3 Analytics hub
-- Activity over time: updates per day/week, total and per focus area.
-- Per-competitor cadence: shipping frequency, recent spikes.
-- Focus-area momentum: which categories are heating up across the field.
-- Competitor × focus-area heatmap (who's investing where).
-- Leaderboards: most active competitors in a window.
+### 5.1 Feed  *(Shipped — was "Archive")*
+- Reverse-chronological feed of updates across all competitors.
+- Each card shows: **relevance score (0–100) + signal type** (new_product / new_feature / update / tangential / irrelevant), category badge (color map below), competitor, **product**, Claude/LLM one-line summary, the page **endpoint**, detected date.
+- An inline **"remove from consideration"** control per card: drops a noisy **endpoint** (path) or **subdomain** via the approval workflow (§5.4).
+- Filters: competitor, category, date range, detection source, relevance (≥ threshold). Full-text search across title/description/summary/preview.
+- Item detail drawer: full scraped preview, classification + **reasoning**, score/signal/product, which run detected it.
+- **Category taxonomy** (unified, covers Telnyx's full product surface; canonical list in [db.ts](../dashboard/backend/src/db.ts) + [inference.py](../tools/inference.py)): **AI Assistants, Inference, STT, TTS, Voice, Messaging, Numbers, Identity, Fax, IoT, Networking, Storage, Other** (+ Not Relevant). Each has a color in the shared map. This taxonomy drives classification, the Categories tab, the offering map, and the product registry — so competitors in any of these areas slot in.
 
-### 5.4 Slack ↔ dashboard integration
-- Slack digest blocks gain "View in dashboard" deep links (to the run, and per-item to the detail view).
-- Dashboard surfaces delivery status of each digest (sent / failed, channel, recipients).
-- Preserve the existing Slack behavior (post to `SLACK_COMPETITOR_CHANNEL`, default `#product-intel`); the dashboard does not replace it.
+### 5.2 Competitors  *(Planned)*
+A per-competitor intelligence view with two halves:
+
+1. **Recent high-relevance activity** — each competitor's newest `new_product`/`new_feature` items (score ≥ 70), shipping cadence, and a momentum indicator. Read-oriented; links into the Feed.
+2. **Offering map vs Telnyx** — a comparison matrix of the competitor's product offerings against Telnyx's, by focus area (AI Assistants / Inference / STT / TTS / Other):
+   - **Inference-generated** initial mapping (the model proposes each competitor product's Telnyx counterpart and a parity verdict — e.g. *parity / gap / Telnyx ahead / competitor ahead / no equivalent* — with a one-line rationale).
+   - **Operator-editable** — verdicts, counterparts, and notes can be corrected; edits are sticky and override the generated values.
+   - **Admin-gated (eventually)** — editing the map becomes an admin action once roles exist; until then anyone can edit.
+   - Sourced from the existing per-competitor **product registry** (§5.4) on one axis and the **Telnyx offerings catalog** on the other (§6) — seeded (31 offerings) from [telnyx.com/products](https://telnyx.com/products), maintained from this tab.
+
+### 5.3 Categories  *(Planned)*
+- Pick a category (AI Assistants / Inference / STT / TTS / Other) and see its **feed across all competitors** plus **trend over time** (volume + momentum).
+- Surfaces "which area is heating up across the field" and who's driving it.
+- Effectively the category slice of the analytics hub, fronted as a browse view.
+
+### 5.4 Training  *(Shipped — Phases A–C; see [inference-training.md](./inference-training.md))*
+The operator's refinement console. Determinism comes from scaffolding the LLM, not the model.
+
+- **Review queue** — **mirrors the Feed** (scored, relevant items, newest first, paginated; reviewed items flagged) so operators can review the whole set and establish a baseline. Per item: **Confirm**, **Flag irrelevant** (+ reason category + note), **Recategorize**, **Fix product**. Actions apply an **immediate correction** to the page and record durable `feedback`. (A borderline/"needs attention" filter can layer on later.)
+- **Candidate products** — unknown product names the classifier surfaced; confirm (adds to the registry, locks future categorization) or reject.
+- **Inference guidance** — free-text notes injected into the next run's classify prompt. **Scope = Global** (every competitor) or a specific competitor. *(Global is the default in the Scope dropdown; it is simply guidance with no competitor attached.)*
+- **Pending removals (approvals)** — endpoint/subdomain removal requests from cards; **approve** adds an endpoint to the competitor's `excludePatterns` or a subdomain to its `ignoredSubdomains` (both visible in Sources); **reject** discards. Approval is open today; admin-gated later.
+- **How feedback reaches the model:** per-competitor **few-shot examples** (recent corrections) + **guidance** + deterministic **rules** (ignored subdomains, exclude patterns, product/category locks) are exported by the runner into the pipeline config and injected/applied on the next run. Examples and per-competitor guidance are **scoped to that competitor**; only Global guidance crosses competitors.
+
+### 5.5 Sources  *(Shipped)*
+- Per-competitor management of **sources** (sitemap/feed URLs), **include/exclude patterns**, **ignored subdomains**, **detection method** (lastmod vs snapshot-diff), and active toggle. Add/remove sources; add new competitors; guarded delete.
+- The dashboard is the source of truth: active competitors/sources/rules/products are exported to the pipeline on each run.
+
+### 5.6 Ops console  *(Partial)*
+- Run history (timestamp, look-back, competitors checked, new/relevant counts, status). Per-competitor **health** (last check, last new page, consecutive-zero "possible silent breakage" flag). Error surfacing. **Manual trigger** (async job + status polling; mirrors CLI flags). Auth + role gating *(planned)*.
+
+### 5.7 Slack ↔ dashboard  *(Planned)*
+- Slack digest blocks gain "View in dashboard" deep links (run + per-item). Dashboard surfaces digest delivery status. Existing Slack push behavior preserved.
 
 ## 6. Data model
 
-Migrate from `.tmp` JSON to a relational store (Postgres recommended). The existing JSON maps cleanly:
+Relational store. Built on **SQLite via Prisma** for zero-setup local dev; portable to **Postgres** (flip the datasource provider; JSON-encoded `string[]` columns become `jsonb`). Shipped tables unless marked.
 
-- **`competitors`** — `id, name, sitemap_urls (jsonb), include_patterns (jsonb), exclude_patterns (jsonb), use_snapshot_diff, active, created_at, updated_at`
-- **`runs`** — `id, started_at, finished_at, hours_window, status, trigger (scheduled|manual), digest_text, slack_status, email_status, error_summary`
-- **`run_competitors`** — `id, run_id, competitor_id, total_sitemap_urls, new_page_count, relevant_count, checked_at, status, error` (per-competitor result within a run)
-- **`pages`** — `id, run_competitor_id, competitor_id, url, lastmod, detection_source, title, description, text_preview, text_length, first_seen_run_id, scraped_at`
-- **`classifications`** — `id, page_id, relevant, category, summary, model, classified_at` (1:1 with page in v1; separate table leaves room for re-classification history)
-- **`snapshots`** — `id, competitor_id, urls (jsonb), url_count, saved_at` (replaces `.tmp/snapshots/*.json`)
-
-Notes:
-- Dedupe pages by `(competitor_id, url)` so the same URL re-detected doesn't create archive noise; track `first_seen_run_id`.
-- Keep writing a JSON artifact per run optionally for backwards-compat, but the DB is the source of truth.
+- **`competitors`** — `id, name, sitemap_urls, include_patterns, exclude_patterns, ignored_subdomains, use_snapshot_diff, active, timestamps`
+- **`runs`** — `id, started_at, finished_at, hours_window, status, trigger, digest_text, slack_status, email_status, error_summary`
+- **`run_competitors`** — per-competitor result within a run (`total_sitemap_urls, new_page_count, relevant_count, checked_at, status, error`)
+- **`pages`** — `id, run_competitor_id, competitor_id, url, lastmod, detection_source, title, description, text_preview, text_length, first_seen_run_id, scraped_at` (deduped by `(competitor_id, url)`)
+- **`classifications`** — `id, page_id, relevant, relevance_score, signal_type, product, category, summary, reasoning, model, rubric_version, classified_at`
+- **`products`** — per-competitor registry: `id, competitor_id, name, category, aliases, status (active|candidate|deprecated), first_seen_page_id, timestamps`
+- **`feedback`** — operator actions: `id, page_id, competitor_id, action, reason_category, reason, operator, created_at`
+- **`guidance`** — `id, competitor_id (nullable = global), text, active, operator, created_at`
+- **`removal_requests`** — approval workflow: `id, competitor_id, kind (endpoint|subdomain), value, host, status (pending|approved|rejected), requested_by, resolved_by, page_id, timestamps`
+- **`snapshots`** — sitemap baselines for snapshot-diff competitors
+- **`telnyx_offerings`** *(Planned)* — `id, name, category, description` — the Telnyx side of the §5.2 comparison.
+- **`offering_comparisons`** *(Planned)* — `id, competitor_id, focus_area, competitor_product_id?, telnyx_offering_id?, verdict (parity|gap|telnyx_ahead|competitor_ahead|none), rationale, source (inference|manual), edited_by, timestamps`.
 
 ## 7. Architecture
 
-Per the decision to build a **decoupled React frontend + JSON API**:
+Decoupled **React frontend + JSON API**, as built:
 
-- **Backend API:** FastAPI (Python) — keeps the dashboard in the same language as the pipeline, so it can import and reuse the existing tool code directly (config, scraping, classification, snapshot logic). Exposes REST/JSON endpoints for the frontend and houses the run trigger.
-- **Pipeline integration:** refactor [`run_monitor`](../tools/competitor_monitor.py) to persist to the DB (via the API's data layer or a shared module) instead of only writing `.tmp` JSON. The CLI continues to work; it just also writes to the DB.
-- **Frontend:** React (Vite + TypeScript), a component library (e.g. shadcn/ui or MUI), a charting lib (Recharts) for analytics, React Query for data fetching.
-- **Scheduler:** existing cron/scheduled run stays; manual triggers go through the API (async job + status polling so the UI doesn't block on a multi-minute scrape).
-- **Auth:** SSO/Google or a simple gateway; role gate for the ops/admin area.
+- **Backend API:** **Express + TypeScript + Prisma** ([dashboard/backend](../dashboard/backend)). Owns the DB; triggers pipeline runs by spawning the Python scraper and ingesting its JSON artifact. *(PRD originally proposed FastAPI; the implementation is Express/Node.)*
+- **Pipeline integration:** the runner **exports active DB config** (competitors, sources, rules, products, guidance, few-shot examples) to a JSON file the pipeline reads via `--config`; the CLI still works standalone with its built-in list as a fallback. The pipeline writes a JSON artifact that the backend ingests.
+- **Inference:** pluggable layer ([inference.py](../tools/inference.py)) — OpenAI API key **or** ChatGPT-OAuth (Codex) provider; rubric-driven structured scoring + product canonicalization + threshold-based relevance.
+- **Frontend:** **React (Vite + TS)** with React Router + React Query ([dashboard/frontend](../dashboard/frontend)). Charting lib (e.g. Recharts) for Categories/Competitors analytics *(planned)*.
+- **Python interpreter:** backend resolves `PYTHON_BIN` → repo `.venv` → `python3` so the spawned pipeline has its deps.
+- **Auth:** SSO/Google or a gateway; role gate for admin actions *(planned)*.
 
-### Representative API surface
+### Representative API surface (shipped unless noted)
 ```
-GET  /api/pages?competitor=&category=&from=&to=&q=&page=     # archive feed + search
-GET  /api/pages/{id}                                         # item detail
-GET  /api/runs                                               # run history
-GET  /api/runs/{id}                                          # run detail + digest + errors
-POST /api/runs                                               # trigger a manual run (async)
-GET  /api/competitors                                        # list/health
-POST /api/competitors  /  PUT /api/competitors/{id}          # CRUD config
-GET  /api/analytics/activity?from=&to=&groupBy=              # time series
-GET  /api/analytics/heatmap                                  # competitor × focus area
+GET  /api/pages | /api/pages/:id                         # feed + detail (score/signal/product/reasoning)
+POST /api/pages/:id/feedback                             # flag/recategorize/reassign/confirm (+ immediate correction)
+GET  /api/feedback/queue                                 # training review queue (mirrors the feed; paginated)
+GET/POST/PATCH/DELETE /api/competitors (+ /sources,      # source & competitor management
+     /ignored-subdomains)
+GET/POST/PATCH/DELETE /api/products                      # product registry + candidate confirm
+GET/POST/PATCH/DELETE /api/guidance                      # inference guidance (global/per-competitor)
+GET  /api/removal-requests ; POST :id/approve | :id/reject   # endpoint/subdomain removal approvals
+POST /api/policy/regenerate                              # rewrite docs/relevance-policy.md from DB
+POST /api/runs ; GET /api/runs/jobs/:id                  # manual run trigger + poll
+GET  /api/analytics/activity | /api/analytics/heatmap    # (partial) time-series + heatmap
+GET  /api/telnyx-offerings ; GET/PATCH /api/offering-comparisons   # (planned) §5.2 map
 ```
 
 ## 8. Success metrics
-- Time-to-answer for "what did competitor X ship in period Y" drops from minutes-of-grep to a single filtered query.
-- 100% of monitor runs and detected pages persisted and retrievable (no more lost `.tmp` data).
-- Silent-breakage detection: operators are alerted to a competitor returning 0 results for N consecutive runs.
-- Adoption: leadership opens the dashboard from Slack deep links; weekly active viewers.
-- Operator can add/edit a competitor and trigger a run without touching Python or redeploying.
+- "What did competitor X ship in period Y" drops from grep to a filtered query. *(met)*
+- 100% of runs/pages persisted and retrievable. *(met)*
+- **Precision:** share of feed items at score ≥ threshold that an operator confirms as genuinely relevant trends up as feedback accrues.
+- **Refinement throughput:** the feed gets reviewed (share of items with operator feedback rises); corrections measurably shift the next run (fewer repeat flags for the same pattern).
+- Silent-breakage detection: operators alerted to a competitor returning 0 for N consecutive runs.
+- Operators add/edit competitors, sources, rules, and the Telnyx map without touching Python.
 
 ## 9. Phasing
 
-**Phase 1 — Persistence + archive (MVP).** Stand up DB + FastAPI; refactor pipeline to write to DB; build the archive feed with filters/search and item detail. Add deep links to Slack. *This alone closes the biggest gap (history + search).*
+**Shipped**
+- **Phase 1 — Persistence + Feed.** DB + API; pipeline reads DB config; feed with filters/search + detail.
+- **Training A — Scoring.** Rubric (v1, threshold 40), 0–100 score + signal types, product registry + canonicalization, schema.
+- **Training B — Feedback capture.** Training review queue, feedback endpoints + immediate correction, candidate products, scores surfaced on the feed.
+- **Training C — Feedback → runs.** Plain-text guidance (global/per-competitor) + few-shot injection + endpoint/subdomain removal approval workflow + generated `relevance-policy.md`.
+- **Unified taxonomy + tabs.** Category taxonomy expanded to Telnyx's full product surface; **Categories tab** (browse + trends), **Competitors tab** (recent high-relevance activity), and the **Telnyx offerings catalog** (`telnyx_offerings`/`offering_comparisons`, seeded with 31 offerings).
 
-**Phase 2 — Ops console.** Run history, per-competitor health, error surfacing, manual trigger, competitor CRUD, auth + role gating.
-
-**Phase 3 — Analytics hub.** Time-series, heatmap, cadence, momentum, leaderboards.
-
-**Phase 4 — Polish & hooks.** Saved views, export, and a hook for the roadmap's Linear ticket creation from a dashboard item.
+**Planned**
+- **Competitors offering map** — the editable comparison matrix + inference-generated parity verdicts (foundation shipped; needs the matrix UI + generation step).
+- **Categories tab** — richer momentum/leaderboard analytics on top of the current browse + trend.
+- **Ops console** completion + **auth/role gating** (the admin boundary for approvals, Telnyx-map editing, and eventual classification overrides).
+- **Automations (Training D)** — downstream actions that consume `relevance_score` (e.g. alerts/tickets on high-confidence new products), confidence-gated to route uncertain items to the queue.
+- **Slack deep links** + delivery status.
 
 ## 10. Open questions
-- **Hosting/deploy target** — internal infra vs. a managed host? (Affects auth choice.)
-- **Auth provider** — Telnyx Google SSO, or a lightweight internal gateway?
-- **Backfill** — replay existing `.tmp/competitor_monitor_*.json` into the new DB on launch, or start fresh?
-- **Retention** — keep all pages/runs indefinitely, or age out raw `text_preview` after N months to control size?
-- **Run trigger security** — who can trigger manual runs and edit competitor config (role boundary)?
-- **Annotations (v2?)** — should leadership be able to tag/star/comment on items, or override Claude's category?
-```
-
+- **Telnyx offerings source** — curate a seed catalog for the §5.2 map, or pull from an existing internal source of truth? Who owns keeping it current?
+- **Offering-map generation** — generate the comparison on demand, per run, or on a schedule? How much page context does the model need to judge parity reliably?
+- **Admin/role model** — who is an admin (approvals, Telnyx-map edits, classification overrides)? Auth provider (Telnyx Google SSO vs gateway)?
+- **Hosting/deploy** — internal infra vs managed host; Postgres migration timing.
+- **Backfill & retention** — replay historical `.tmp/*.json`? Age out raw `text_preview` after N months?
+- **Rubric governance** — who can change the threshold / rubric version, and how is a re-score of historical items handled?

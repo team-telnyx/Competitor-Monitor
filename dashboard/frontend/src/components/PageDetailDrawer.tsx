@@ -52,7 +52,26 @@ export function PageDetailDrawer({ pageId, onClose }: Props) {
               </p>
             )}
 
+            {data.classification?.reasoning && (
+              <p className="reasoning">
+                <strong>Why:</strong> {data.classification.reasoning}
+              </p>
+            )}
+
             <div style={{ margin: "14px 0" }}>
+              <div className="kv">
+                <span>Relevance</span>
+                {data.classification?.relevanceScore != null
+                  ? `${data.classification.relevanceScore}/100`
+                  : "—"}
+                {data.classification?.signalType
+                  ? ` · ${data.classification.signalType}`
+                  : ""}
+              </div>
+              <div className="kv">
+                <span>Product</span>
+                {data.classification?.product || "—"}
+              </div>
               <div className="kv">
                 <span>Relevant</span>
                 {data.classification?.relevant ? "Yes" : "No"}

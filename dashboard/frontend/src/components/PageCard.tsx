@@ -1,4 +1,6 @@
 import type { PageListItem } from "../types";
+import { ScoreBadge } from "./ScoreBadge";
+import { RemovalAction } from "./RemovalAction";
 
 interface Props {
   item: PageListItem;
@@ -18,12 +20,14 @@ export function PageCard({ item, onOpen }: Props) {
   return (
     <div className="card" style={{ borderLeftColor: item.categoryColor }}>
       <div className="row">
+        <ScoreBadge score={item.relevanceScore} signalType={item.signalType} />
         {item.category && (
           <span className="badge" style={{ background: item.categoryColor }}>
             {item.category}
           </span>
         )}
         <span className="competitor-name">{item.competitor.name}</span>
+        {item.product && <span className="muted">· {item.product}</span>}
         <span className="muted">· {formatDate(item.scrapedAt)}</span>
         {item.detectionSource && (
           <span className="muted">· {item.detectionSource}</span>
@@ -46,6 +50,7 @@ export function PageCard({ item, onOpen }: Props) {
         <a href={item.url} target="_blank" rel="noreferrer">
           Open source ↗
         </a>
+        <RemovalAction competitorId={item.competitor.id} url={item.url} pageId={item.id} />
       </div>
     </div>
   );

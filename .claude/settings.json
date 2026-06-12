@@ -1,7 +1,38 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git checkout *)"
+      "Bash(git checkout *)",
+      "Bash(npm run *)",
+      "Bash(curl -s localhost:4000/api/health)",
+      "Bash(curl -s \"localhost:4000/api/pages\")",
+      "Read(//tmp/**)",
+      "Bash(npm install *)",
+      "Bash(curl -s localhost:5173/)",
+      "Bash(curl -s \"localhost:5173/api/pages?relevant=all\")",
+      "Bash(python3 -c \"import sys,json;d=json.load\\(sys.stdin\\);print\\('total via proxy:',d['total']\\)\")",
+      "Bash(pkill -f \"tsx watch src/index.ts\")",
+      "Bash(pkill -f \"vite\")",
+      "Bash(lsof -ti:4000 -ti:5173)",
+      "Bash(npx prisma *)",
+      "Bash(curl -s \"localhost:4000/api/pages?relevant=all&pageSize=5\")",
+      "Bash(python3 -c \"import sys,json;d=json.load\\(sys.stdin\\);print\\('total:',d['total']\\);[print\\(' -',i['title'][:55],'->',i['url']\\) for i in d['items']]\")",
+      "Bash(git add *)",
+      "Bash(git rm *)",
+      "Bash(git push *)",
+      "Bash(python3 -c \"import json;json.load\\(open\\('.claude/settings.local.json'\\)\\);print\\('valid JSON'\\)\")",
+      "Bash(git check-ignore *)",
+      "Bash(python3 -c \"import json;print\\(json.load\\(open\\('.claude/settings.local.json'\\)\\)['permissions']['deny']\\)\")",
+      "Bash(cat \"/Users/jakej/Library/Application Support/Code/User/settings.json\")",
+      "Read(//Users/jakej/Library/Application Support/Code/User/**)",
+      "Bash(python3 -m venv .venv)",
+      "Bash(.venv/bin/python -m pip install --quiet --upgrade pip)",
+      "Bash(.venv/bin/pip install *)",
+      "Bash(.venv/bin/python -c \"import bs4, requests, dotenv; print\\('deps OK; bs4', bs4.__version__\\)\")",
+      "Bash(.venv/bin/python tools/competitor_monitor.py --help)",
+      "Bash(pkill -f competitor_monitor)",
+      "Read(//opt/homebrew/bin/**)",
+      "Read(//Users/jakej/**)",
+      "Read(//Users/jakej/.cache/**)"
     ]
   }
 }

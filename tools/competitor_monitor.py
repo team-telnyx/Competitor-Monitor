@@ -24,7 +24,13 @@ import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
-from inference import get_inference_client
+from inference import (
+    RUBRIC_VERSION,
+    canonicalize_product,
+    describe_active_client,
+    get_inference_client,
+    score_to_relevant,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -46,9 +52,17 @@ load_environment()
 
 FOCUS_AREAS = [
     "AI Assistants — voice agents, conversational AI, virtual assistants, agent frameworks",
-    "Inference — LLM hosting, model serving, real-time inference, API endpoints, latency improvements",
+    "Inference — LLM hosting, model serving, embeddings, real-time inference, API endpoints, latency",
     "STT (Speech-to-Text) — transcription, ASR, real-time speech recognition, diarization",
     "TTS (Text-to-Speech) — voice synthesis, voice cloning, audio generation, voice models",
+    "Voice — SIP trunking, voice APIs, TeXML, WebRTC, call control, telephony infrastructure",
+    "Messaging — SMS/MMS, RCS, WhatsApp, short codes, 10DLC, A2P messaging",
+    "Numbers — phone number provisioning, global/toll-free numbers, porting",
+    "Identity — number lookup, caller ID, verification/2FA",
+    "Fax — fax APIs and services",
+    "IoT — SIM/eSIM, cellular connectivity, mobile data",
+    "Networking — programmable networking, VPN, edge routing, private connectivity",
+    "Storage — object/cloud storage",
 ]
 
 # =============================================================================
@@ -300,7 +314,7 @@ def save_snapshot(name, urls, snapshot_dir=".tmp/snapshots"):
     print(f"  Snapshot saved: {len(urls)} URLs -> {snapshot_file}")
 
 
-def diff_snapshot(name, current_entries, include_patterns=None, exclude_patterns=None, snapshot_dir=".tmp/snapshots"):
+def diff_snapshot(name, current_entries, include_patterns=None, exclude_patterns=None, snapshot_dir=".tmp/snapshots", ignored_subdomains=None):
     """Compare current sitemap URLs against the previous snapshot."""
     current_urls = {e["url"] for e in current_entries}
     previous_urls = load_snapshot(name, snapshot_dir)
@@ -327,6 +341,8 @@ def diff_snapshot(name, current_entries, include_patterns=None, exclude_patterns
             continue
 
         url = entry["url"]
+        if host_is_ignored(url, ignored_subdomains):
+            continue
         if include_patterns and not any(re.search(p, url) for p in include_patterns):
             continue
         if exclude_patterns and any(re.search(p, url) for p in exclude_patterns):
@@ -338,13 +354,35 @@ def diff_snapshot(name, current_entries, include_patterns=None, exclude_patterns
     return new_entries
 
 
-def filter_new_pages(entries, hours=24, include_patterns=None, exclude_patterns=None):
+def host_is_ignored(url, ignored_subdomains):
+    """True if the URL's host equals or is a subdomain of any ignored entry.
+
+    Entries are hostnames (e.g. "community.elevenlabs.io"). Ignoring an entry
+    drops that host and anything under it, but not sibling subdomains.
+    """
+    if not ignored_subdomains:
+        return False
+    host = (urlparse(url).hostname or "").lower()
+    if not host:
+        return False
+    for entry in ignored_subdomains:
+        e = (entry or "").strip().lower().strip(".")
+        if e and (host == e or host.endswith("." + e)):
+            return True
+    return False
+
+
+def filter_new_pages(entries, hours=24, include_patterns=None, exclude_patterns=None,
+                     ignored_subdomains=None):
     """Filter sitemap entries to only those modified within the time window."""
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
     new_pages = []
 
     for entry in entries:
         url = entry["url"]
+
+        if host_is_ignored(url, ignored_subdomains):
+            continue
 
         if include_patterns:
             if not any(re.search(p, url) for p in include_patterns):
@@ -411,71 +449,91 @@ def scrape_page(url, timeout=30):
 # LLM-based classification and summarization
 # =============================================================================
 
-def classify_pages(pages, competitor_name):
+def _unclassified(page):
+    """Fallback classification used when inference is unavailable or errors."""
+    return {
+        "relevant": True,
+        "relevance_score": None,
+        "signal_type": "unclassified",
+        "product": "",
+        "product_known": False,
+        "category": "unclassified",
+        "summary": page.get("scraped", {}).get("description", ""),
+        "reasoning": "",
+        "rubric_version": RUBRIC_VERSION,
+    }
+
+
+def classify_pages(pages, competitor_name, known_products=None, guidance=None, examples=None):
     """
-    Use the configured inference provider to classify pages by AI/voice relevance.
-    Returns pages with added 'classification' field.
+    Score pages with the configured inference provider, then deterministically
+    post-process: canonicalize the product against the registry (locking category
+    when known) and derive `relevant` from the rubric threshold.
+    Returns pages with an added 'classification' field.
     """
     inference_client = get_inference_client()
     if not inference_client:
-        print("  Warning: OPENAI_API_KEY not set. Skipping LLM classification.", file=sys.stderr)
-        # Return all pages unclassified
+        print("  Warning: inference not configured. Skipping LLM classification.", file=sys.stderr)
         for p in pages:
-            p["classification"] = {
-                "relevant": True,
-                "category": "unclassified",
-                "summary": p.get("scraped", {}).get("description", ""),
-            }
+            p["classification"] = _unclassified(p)
         return pages
 
     # Build page summaries for the prompt
     page_entries = []
     for i, page in enumerate(pages):
         scraped = page.get("scraped", {})
-        entry = {
+        page_entries.append({
             "index": i,
             "url": page["url"],
             "title": scraped.get("title", ""),
             "description": scraped.get("description", ""),
             "text_preview": scraped.get("text_preview", "")[:800],
-        }
-        page_entries.append(entry)
+        })
 
     try:
         classifications = inference_client.classify_pages(
             competitor_name=competitor_name,
             focus_areas=FOCUS_AREAS,
             page_entries=page_entries,
+            known_products=known_products,
+            guidance=guidance,
+            examples=examples,
         )
 
         for c in classifications:
-            idx = c["index"]
-            if 0 <= idx < len(pages):
-                pages[idx]["classification"] = {
-                    "relevant": c.get("relevant", False),
-                    "category": c.get("category", "Not Relevant"),
-                    "summary": c.get("summary", ""),
-                }
+            idx = c.get("index")
+            if not isinstance(idx, int) or not (0 <= idx < len(pages)):
+                continue
+            canonical, registry_category, is_known = canonicalize_product(
+                c.get("product", ""), known_products
+            )
+            raw_score = c.get("relevance_score")
+            score = int(raw_score) if isinstance(raw_score, (int, float)) else None
+            # Lock category to the registry when the product is known (deterministic).
+            category = registry_category or c.get("category") or "Other AI/Voice"
+            pages[idx]["classification"] = {
+                "relevant": score_to_relevant(score),
+                "relevance_score": score,
+                "signal_type": c.get("signal_type", "irrelevant"),
+                "product": canonical,
+                "product_known": is_known,
+                "category": category,
+                "summary": c.get("summary", ""),
+                "reasoning": c.get("reasoning", ""),
+                "rubric_version": RUBRIC_VERSION,
+            }
 
-        # Tag any unclassified pages
+        # Tag any pages the model didn't return
         for p in pages:
             if "classification" not in p:
-                p["classification"] = {
-                    "relevant": True,
-                    "category": "unclassified",
-                    "summary": p.get("scraped", {}).get("description", ""),
-                }
+                p["classification"] = _unclassified(p)
 
         return pages
 
     except Exception as e:
         print(f"  Warning: LLM classification failed: {e}", file=sys.stderr)
         for p in pages:
-            p["classification"] = {
-                "relevant": True,
-                "category": "unclassified",
-                "summary": p.get("scraped", {}).get("description", ""),
-            }
+            p["classification"] = _unclassified(p)
         return pages
 
 
@@ -514,6 +572,40 @@ def generate_digest(all_results):
     except Exception as e:
         print(f"  Warning: Digest generation failed: {e}", file=sys.stderr)
         return None
+
+
+def load_competitors_from_config(path):
+    """Load competitor configs from a JSON file (the dashboard DB export).
+
+    The dashboard is the source of truth for which competitors/sources are
+    monitored; the runner exports the active rows to JSON and passes --config.
+    Each entry mirrors the COMPETITORS dict shape. Falls back gracefully on a
+    missing/malformed file by raising, so callers can decide to use defaults.
+    """
+    data = json.loads(Path(path).read_text())
+    if not isinstance(data, list):
+        raise ValueError(f"Config at {path} must be a JSON array of competitors")
+
+    competitors = []
+    for entry in data:
+        name = (entry.get("name") or "").strip()
+        sitemap_urls = entry.get("sitemap_urls") or []
+        if not name or not sitemap_urls:
+            continue  # skip incomplete rows (e.g. a competitor with no sources)
+        competitors.append(
+            {
+                "name": name,
+                "sitemap_urls": list(sitemap_urls),
+                "include_patterns": list(entry.get("include_patterns") or []),
+                "exclude_patterns": list(entry.get("exclude_patterns") or []),
+                "ignored_subdomains": list(entry.get("ignored_subdomains") or []),
+                "products": list(entry.get("products") or []),
+                "guidance": list(entry.get("guidance") or []),
+                "examples": list(entry.get("examples") or []),
+                "use_snapshot_diff": bool(entry.get("use_snapshot_diff", False)),
+            }
+        )
+    return competitors
 
 
 def select_competitors(competitors, names=None):
@@ -722,6 +814,7 @@ def run_monitor(competitors=None, hours=24, scrape=True, classify=True,
                 include_patterns=comp.get("include_patterns") or None,
                 exclude_patterns=comp.get("exclude_patterns") or None,
                 snapshot_dir=output_dir + "/snapshots",
+                ignored_subdomains=comp.get("ignored_subdomains") or None,
             )
             print(f"  {len(new_pages)} new pages since last run")
         else:
@@ -730,6 +823,7 @@ def run_monitor(competitors=None, hours=24, scrape=True, classify=True,
                 hours=hours,
                 include_patterns=comp.get("include_patterns") or None,
                 exclude_patterns=comp.get("exclude_patterns") or None,
+                ignored_subdomains=comp.get("ignored_subdomains") or None,
             )
             print(f"  {len(new_pages)} pages modified in last {hours} hours")
 
@@ -743,7 +837,12 @@ def run_monitor(competitors=None, hours=24, scrape=True, classify=True,
         # LLM classification
         if classify and scrape and new_pages:
             print(f"  Classifying {len(new_pages)} pages with LLM...")
-            new_pages = classify_pages(new_pages, name)
+            new_pages = classify_pages(
+                new_pages, name,
+                known_products=comp.get("products") or [],
+                guidance=comp.get("guidance") or [],
+                examples=comp.get("examples") or [],
+            )
             relevant = [p for p in new_pages if p.get("classification", {}).get("relevant")]
             filtered = len(new_pages) - len(relevant)
             if filtered:
@@ -779,10 +878,7 @@ def run_monitor(competitors=None, hours=24, scrape=True, classify=True,
     output_data = {
         "results": all_results,
         "digest": digest,
-        "inference": {
-            "provider": "openai",
-            "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-        } if classify and os.getenv("OPENAI_API_KEY") else None,
+        "inference": describe_active_client(get_inference_client()) if classify else None,
         "scan_time": datetime.now(timezone.utc).isoformat(),
         "hours": hours,
     }
@@ -856,6 +952,7 @@ Examples:
         """,
     )
 
+    parser.add_argument("--config", default=None, help="Path to a JSON competitor config (dashboard DB export); defaults to the built-in list")
     parser.add_argument("--competitor", action="append", help="Run only the named competitor (repeatable)")
     parser.add_argument("--hours", type=int, default=24, help="Look-back window in hours (default: 24)")
     parser.add_argument("--no-scrape", action="store_true", help="Skip scraping page content")
@@ -869,7 +966,12 @@ Examples:
     args = parser.parse_args()
 
     try:
-        selected_competitors = select_competitors(COMPETITORS, args.competitor)
+        if args.config:
+            available = load_competitors_from_config(args.config)
+            print(f"Loaded {len(available)} competitors from {args.config}", file=sys.stderr)
+        else:
+            available = COMPETITORS
+        selected_competitors = select_competitors(available, args.competitor)
         results = run_monitor(
             competitors=selected_competitors,
             hours=args.hours,

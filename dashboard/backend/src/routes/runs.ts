@@ -48,6 +48,7 @@ runsRouter.get("/", async (req, res) => {
 const triggerSchema = z.object({
   hours: z.number().int().positive().max(24 * 90).optional(),
   competitor: z.string().min(1).optional(),
+  competitors: z.array(z.string().min(1)).max(50).optional(),
   noSlack: z.boolean().optional(),
   noClassify: z.boolean().optional(),
   requireInference: z.boolean().optional(),
@@ -56,12 +57,12 @@ const triggerSchema = z.object({
 });
 
 /** POST /api/runs — trigger a manual run (async). Returns a job to poll. */
-runsRouter.post("/", (req, res) => {
+runsRouter.post("/", async (req, res) => {
   const parsed = triggerSchema.safeParse(req.body ?? {});
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
-  const job = startRun(parsed.data);
+  const job = await startRun(parsed.data);
   res.status(202).json({ jobId: job.id, status: job.status });
 });
 
