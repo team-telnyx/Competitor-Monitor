@@ -30,15 +30,22 @@ Daily automated scan of competitor websites to detect new pages and product upda
 ### Transcription / Audio AI
 | Competitor | Detection Method | Has `lastmod` | Focus |
 |-----------|-----------------|:---:|-------|
-| Deepgram | Snapshot diff | No | STT, audio intelligence |
 | AssemblyAI | Snapshot diff | No | STT, audio intelligence |
 
 ### Platform Competitors
 | Competitor | Detection Method | Has `lastmod` | Focus |
 |-----------|-----------------|:---:|-------|
 | Twilio | Lastmod | Yes | Blog, changelog, press (filtered to en-us) |
-| OpenAI | Lastmod | Yes | Realtime API, inference, audio models |
-| Google Cloud | Lastmod | Yes | Speech-to-Text, Text-to-Speech, Vertex AI |
+
+### AI Inference / Compute Platforms
+| Competitor | Detection Method | Has `lastmod` | Focus |
+|-----------|-----------------|:---:|-------|
+| Together AI | Snapshot diff | No | Serverless/dedicated inference, fine-tuning, GPU clusters |
+| Baseten | Snapshot diff | No | Model APIs, dedicated deployments, training |
+| Fireworks AI | Snapshot diff | No | Serverless inference, fine-tuning, model serving |
+| RunPod | Snapshot diff | No | Serverless GPU, GPU cloud, clusters |
+| Modal | Snapshot diff | No | Serverless GPU, sandboxes (no public sitemap yet) |
+| Replicate | Snapshot diff | No | Predictions API, deployments, fine-tuning |
 
 ## Tool to Execute
 `tools/competitor_monitor.py`

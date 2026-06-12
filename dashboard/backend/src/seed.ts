@@ -77,7 +77,7 @@ const DEMO_RUN: PipelineOutput = {
     "- ElevenLabs shipped a lower-latency streaming voice model targeting real-time agents.",
     "",
     "**STT**",
-    "- Deepgram announced an updated Nova transcription model with improved diarization.",
+    "- AssemblyAI announced an updated Universal transcription model with improved diarization.",
     "",
     "**Key Takeaways**",
     "- Real-time voice latency is the active battleground this week.",
@@ -110,29 +110,29 @@ const DEMO_RUN: PipelineOutput = {
       ],
     },
     {
-      competitor: "Deepgram",
+      competitor: "AssemblyAI",
       total_sitemap_urls: 860,
       checked_at: "2026-06-10T13:00:00Z",
       new_pages: [
         {
-          url: "https://deepgram.com/learn/nova-3-diarization",
+          url: "https://www.assemblyai.com/blog/universal-2-diarization",
           source: "snapshot_diff",
           scraped: {
-            title: "Nova-3: better diarization for multi-speaker audio",
-            description: "Improved speaker separation and accuracy in the new Nova-3 model.",
+            title: "Universal-2: better diarization for multi-speaker audio",
+            description: "Improved speaker separation and accuracy in the new Universal-2 model.",
             text_preview:
-              "Nova-3 improves diarization accuracy on multi-speaker calls and reduces word error rate across noisy conditions...",
+              "Universal-2 improves diarization accuracy on multi-speaker calls and reduces word error rate across noisy conditions...",
             text_length: 3100,
           },
           classification: {
             relevant: true,
             category: "STT",
             summary:
-              "Deepgram released Nova-3 with improved diarization and lower WER on noisy multi-speaker audio.",
+              "AssemblyAI released Universal-2 with improved diarization and lower WER on noisy multi-speaker audio.",
           },
         },
         {
-          url: "https://deepgram.com/events/webinar-recap",
+          url: "https://www.assemblyai.com/events/webinar-recap",
           source: "snapshot_diff",
           scraped: {
             title: "Webinar recap: building with voice AI",
