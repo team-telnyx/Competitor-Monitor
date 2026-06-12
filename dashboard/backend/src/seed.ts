@@ -4,7 +4,10 @@ import { PRODUCT_CATALOG } from "./productCatalog.js";
 import { TELNYX_OFFERINGS } from "./telnyxOfferings.js";
 import { ingestRunData, type PipelineOutput } from "./ingest.js";
 
-/** Seed competitor config from the mirrored pipeline list. */
+/** Seed competitor config from the mirrored pipeline list, then prune anything
+ *  not in the list so the DB converges on exactly COMPETITOR_SEED. The prune is
+ *  a hard delete and cascades to the competitor's archived pages/runs/snapshots
+ *  (schema onDelete: Cascade) — set KEEP_EXTRA_COMPETITORS=1 to skip it. */
 async function seedCompetitors() {
   for (const c of COMPETITOR_SEED) {
     const fields = {
@@ -20,6 +23,22 @@ async function seedCompetitors() {
     });
   }
   console.log(`Seeded ${COMPETITOR_SEED.length} competitors.`);
+
+  if (process.env.KEEP_EXTRA_COMPETITORS === "1") {
+    console.log("Skipping prune (KEEP_EXTRA_COMPETITORS=1).");
+    return;
+  }
+
+  const keep = new Set(COMPETITOR_SEED.map((c) => c.name));
+  const extras = await prisma.competitor.findMany({
+    where: { name: { notIn: [...keep] } },
+    select: { id: true, name: true, _count: { select: { pages: true } } },
+  });
+  for (const e of extras) {
+    await prisma.competitor.delete({ where: { id: e.id } });
+    console.log(`Pruned competitor "${e.name}" (purged ${e._count.pages} archived page(s)).`);
+  }
+  if (extras.length) console.log(`Pruned ${extras.length} competitor(s) not in the seed list.`);
 }
 
 /** Seed the draft product registry. Upserts known products; never demotes an

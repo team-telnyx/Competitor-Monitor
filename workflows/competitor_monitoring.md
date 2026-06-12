@@ -44,7 +44,7 @@ Daily automated scan of competitor websites to detect new pages and product upda
 | Baseten | Snapshot diff | No | Model APIs, dedicated deployments, training |
 | Fireworks AI | Snapshot diff | No | Serverless inference, fine-tuning, model serving |
 | RunPod | Snapshot diff | No | Serverless GPU, GPU cloud, clusters |
-| Modal | Snapshot diff | No | Serverless GPU, sandboxes (no public sitemap yet) |
+| Modal | Atom feed (lastmod) | Yes | Serverless GPU, sandboxes (via blog Atom feed) |
 | Replicate | Snapshot diff | No | Predictions API, deployments, fine-tuning |
 
 ## Tool to Execute
