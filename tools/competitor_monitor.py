@@ -111,20 +111,6 @@ COMPETITORS = [
     },
     # --- Transcription / audio AI ---
     {
-        "name": "Deepgram",
-        # No lastmod
-        "sitemap_urls": ["https://deepgram.com/sitemap.xml"],
-        "include_patterns": [
-            r"/blog/", r"/changelog", r"/learn/",
-            r"deepgram\.com/[^/]+$",
-        ],
-        "exclude_patterns": [
-            r"/careers/", r"/legal/", r"/terms", r"/privacy",
-            r"/partners/", r"/events/",
-        ],
-        "use_snapshot_diff": True,
-    },
-    {
         "name": "AssemblyAI",
         # No lastmod
         "sitemap_urls": ["https://www.assemblyai.com/sitemap.xml"],
@@ -149,27 +135,82 @@ COMPETITORS = [
         ],
         "exclude_patterns": [],
     },
+    # --- AI inference / compute platforms ---
     {
-        "name": "OpenAI",
-        # Has lastmod
-        "sitemap_urls": ["https://openai.com/sitemap.xml"],
+        "name": "Together AI",
+        "sitemap_urls": ["https://www.together.ai/sitemap.xml"],
         "include_patterns": [
-            r"openai\.com/index/",  # blog posts
-            r"openai\.com/api/",
+            r"together\.ai/blog/",
+            r"together\.ai/(serverless-inference|dedicated-inference|fine-tuning|batch-inference|gpu-clusters|models|pricing)",
         ],
-        "exclude_patterns": [
-            r"/careers/", r"/legal/", r"/terms", r"/privacy",
-        ],
+        "exclude_patterns": [r"/careers", r"/legal", r"/terms", r"/privacy"],
+        "use_snapshot_diff": True,
     },
     {
-        "name": "Google Cloud Speech",
-        "sitemap_urls": ["https://cloud.google.com/sitemap.xml"],
+        "name": "Baseten",
+        "sitemap_urls": ["https://www.baseten.co/sitemap.xml"],
         "include_patterns": [
-            r"/speech-to-text/", r"/text-to-speech/",
-            r"/vertex-ai/.*release", r"/vertex-ai/.*changelog",
-            r"/blog/products/ai-machine-learning",
+            r"baseten\.co/blog/",
+            r"baseten\.co/resources/changelog/",
+            r"baseten\.co/(products|platform|solutions)/",
         ],
-        "exclude_patterns": [],
+        "exclude_patterns": [
+            r"/blog/category/", r"/author/",
+            r"/careers", r"/legal", r"/terms", r"/privacy",
+        ],
+        "use_snapshot_diff": True,
+    },
+    {
+        "name": "Fireworks AI",
+        "sitemap_urls": ["https://fireworks.ai/sitemap.xml"],
+        "include_patterns": [
+            r"fireworks\.ai/blog/",
+            r"fireworks\.ai/(platform|usecases)/",
+        ],
+        "exclude_patterns": [
+            r"/careers", r"/team", r"/events/",
+            r"/legal", r"/terms", r"/privacy",
+        ],
+        "use_snapshot_diff": True,
+    },
+    {
+        "name": "RunPod",
+        "sitemap_urls": ["https://www.runpod.io/sitemap.xml"],
+        "include_patterns": [
+            r"runpod\.io/blog/",
+            r"runpod\.io/articles/",
+        ],
+        "exclude_patterns": [
+            r"/blog-post-author/", r"/articles/author/",
+            r"/careers", r"/legal", r"/terms", r"/privacy",
+        ],
+        "use_snapshot_diff": True,
+    },
+    {
+        "name": "Modal",
+        # No public sitemap.xml (robots.txt lists none; /sitemap.xml 404s).
+        # Snapshot-diff still works once a sitemap is available; until then this
+        # competitor yields no entries and needs a page-crawl adapter (see PR notes).
+        "sitemap_urls": ["https://modal.com/sitemap.xml"],
+        "include_patterns": [
+            r"modal\.com/blog/",
+            r"modal\.com/docs/",
+        ],
+        "exclude_patterns": [r"/careers", r"/legal", r"/terms", r"/privacy"],
+        "use_snapshot_diff": True,
+    },
+    {
+        "name": "Replicate",
+        # sitemap.xml is a sitemap index (content/static/models child sitemaps);
+        # fetch_sitemap recurses into children automatically.
+        "sitemap_urls": ["https://replicate.com/sitemap.xml"],
+        "include_patterns": [
+            r"replicate\.com/blog",
+            r"replicate\.com/changelog",
+            r"replicate\.com/docs",
+        ],
+        "exclude_patterns": [r"/careers", r"/legal", r"/terms", r"/privacy"],
+        "use_snapshot_diff": True,
     },
 ]
 

@@ -5,8 +5,9 @@ AI/voice product intelligence — daily automated monitoring of competitor websi
 ## Competitors Tracked
 
 **Voice AI**: Vapi, ElevenLabs, Retell AI, Bland AI
-**Transcription**: Deepgram, AssemblyAI
-**Platforms**: Twilio, OpenAI, Google Cloud Speech
+**Transcription**: AssemblyAI
+**Platforms**: Twilio
+**AI Inference**: Together AI, Baseten, Fireworks AI, RunPod, Modal, Replicate
 
 ## How It Works
 

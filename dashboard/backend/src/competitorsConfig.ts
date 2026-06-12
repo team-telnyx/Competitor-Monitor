@@ -47,15 +47,6 @@ export const COMPETITOR_SEED: CompetitorSeed[] = [
     useSnapshotDiff: false,
   },
   {
-    name: "Deepgram",
-    sitemapUrls: ["https://deepgram.com/sitemap.xml"],
-    includePatterns: ["/blog/", "/changelog", "/learn/", "deepgram\\.com/[^/]+$"],
-    excludePatterns: [
-      "/careers/", "/legal/", "/terms", "/privacy", "/partners/", "/events/",
-    ],
-    useSnapshotDiff: true,
-  },
-  {
     name: "AssemblyAI",
     sitemapUrls: ["https://www.assemblyai.com/sitemap.xml"],
     includePatterns: ["/blog/", "/changelog", "/docs/", "assemblyai\\.com/[^/]+$"],
@@ -74,21 +65,71 @@ export const COMPETITOR_SEED: CompetitorSeed[] = [
     useSnapshotDiff: false,
   },
   {
-    name: "OpenAI",
-    sitemapUrls: ["https://openai.com/sitemap.xml"],
-    includePatterns: ["openai\\.com/index/", "openai\\.com/api/"],
-    excludePatterns: ["/careers/", "/legal/", "/terms", "/privacy"],
-    useSnapshotDiff: false,
+    name: "Together AI",
+    sitemapUrls: ["https://www.together.ai/sitemap.xml"],
+    includePatterns: [
+      "together\\.ai/blog/",
+      "together\\.ai/(serverless-inference|dedicated-inference|fine-tuning|batch-inference|gpu-clusters|models|pricing)",
+    ],
+    excludePatterns: ["/careers", "/legal", "/terms", "/privacy"],
+    useSnapshotDiff: true,
   },
   {
-    name: "Google Cloud Speech",
-    sitemapUrls: ["https://cloud.google.com/sitemap.xml"],
+    name: "Baseten",
+    sitemapUrls: ["https://www.baseten.co/sitemap.xml"],
     includePatterns: [
-      "/speech-to-text/", "/text-to-speech/",
-      "/vertex-ai/.*release", "/vertex-ai/.*changelog",
-      "/blog/products/ai-machine-learning",
+      "baseten\\.co/blog/",
+      "baseten\\.co/resources/changelog/",
+      "baseten\\.co/(products|platform|solutions)/",
     ],
-    excludePatterns: [],
-    useSnapshotDiff: false,
+    excludePatterns: [
+      "/blog/category/", "/author/",
+      "/careers", "/legal", "/terms", "/privacy",
+    ],
+    useSnapshotDiff: true,
+  },
+  {
+    name: "Fireworks AI",
+    sitemapUrls: ["https://fireworks.ai/sitemap.xml"],
+    includePatterns: [
+      "fireworks\\.ai/blog/",
+      "fireworks\\.ai/(platform|usecases)/",
+    ],
+    excludePatterns: [
+      "/careers", "/team", "/events/",
+      "/legal", "/terms", "/privacy",
+    ],
+    useSnapshotDiff: true,
+  },
+  {
+    name: "RunPod",
+    sitemapUrls: ["https://www.runpod.io/sitemap.xml"],
+    includePatterns: ["runpod\\.io/blog/", "runpod\\.io/articles/"],
+    excludePatterns: [
+      "/blog-post-author/", "/articles/author/",
+      "/careers", "/legal", "/terms", "/privacy",
+    ],
+    useSnapshotDiff: true,
+  },
+  {
+    // No public sitemap.xml yet (robots.txt lists none; /sitemap.xml 404s).
+    // Needs a page-crawl adapter until a sitemap is published — see PR notes.
+    name: "Modal",
+    sitemapUrls: ["https://modal.com/sitemap.xml"],
+    includePatterns: ["modal\\.com/blog/", "modal\\.com/docs/"],
+    excludePatterns: ["/careers", "/legal", "/terms", "/privacy"],
+    useSnapshotDiff: true,
+  },
+  {
+    // sitemap.xml is a sitemap index; the pipeline recurses into child sitemaps.
+    name: "Replicate",
+    sitemapUrls: ["https://replicate.com/sitemap.xml"],
+    includePatterns: [
+      "replicate\\.com/blog",
+      "replicate\\.com/changelog",
+      "replicate\\.com/docs",
+    ],
+    excludePatterns: ["/careers", "/legal", "/terms", "/privacy"],
+    useSnapshotDiff: true,
   },
 ];

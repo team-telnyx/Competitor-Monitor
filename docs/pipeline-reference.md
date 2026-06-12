@@ -81,11 +81,12 @@ Competitors are configured in the `COMPETITORS` list
 
 - **lastmod mode** (default): keeps pages whose sitemap `<lastmod>` is within the
   `--hours` window. Used when the site publishes reliable `lastmod` dates
-  (e.g. ElevenLabs, Twilio, OpenAI, Bland AI, Google Cloud).
+  (e.g. ElevenLabs, Twilio, Bland AI).
 - **snapshot-diff mode** (`use_snapshot_diff: true`): for sites with no usable `lastmod`.
   Compares the current sitemap URL set against a saved snapshot in
   `.tmp/snapshots/<name>_sitemap.json` and treats newly-appeared URLs as "new."
-  Used for Vapi, Retell AI, Deepgram, AssemblyAI.
+  Used for Vapi, Retell AI, AssemblyAI, and the inference platforms
+  (Together AI, Baseten, Fireworks AI, RunPod, Modal, Replicate).
 
 > **First-run caveat for snapshot-diff competitors:** with no prior snapshot, the first run
 > saves a baseline and reports **0 new pages** ([competitor_monitor.py:308-311](../tools/competitor_monitor.py#L308-L311)).
