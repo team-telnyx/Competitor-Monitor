@@ -915,6 +915,9 @@ def run_monitor(competitors=None, hours=24, scrape=True, classify=True,
                 ignored_subdomains=comp.get("ignored_subdomains") or None,
             )
             print(f"  {len(new_pages)} pages modified in last {hours} hours")
+            # Capture the full URL inventory so the dashboard shows the sitemap skeleton
+            # for lastmod competitors too (snapshot-diff competitors save theirs above).
+            save_snapshot(name, {e["url"] for e in all_entries}, output_dir + "/snapshots")
 
         # Scrape new pages for content
         if scrape and new_pages:
