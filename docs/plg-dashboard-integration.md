@@ -137,13 +137,14 @@ Staged + validated against real data (bundled Postgres + the latest pipeline run
 
 | Piece | Where | Status |
 |---|---|---|
-| SQL schema (the contract) | `db/migrations/{0001,0002}.sql` | ✅ applies clean; constraints enforce |
+| SQL schema (the contract) | `db/migrations/{0001–0004}.sql` | ✅ applies clean; constraints enforce |
 | Producer DB writer | `tools/write_db.py` | ✅ ingests real run (72 pages/31 relevant); idempotent |
 | Read query layer | `integration/server/db/competitive.js` | ✅ correct feed/companies/categories via Node+`pg` |
 | Read route | `integration/server/routes/competitive.js` | ✅ (copy of `inference.js` shape) |
 | Refresh function | `integration/server/refreshCompetitive.js` | ✅ |
 | DB provisioning | `infra-data-pgbot#95` | ⏳ PR open / CI |
-| Frontend rewire | `app/services + CompetitiveIntelligence.tsx` | ⬜ next |
+| Frontend rewire | `app/services + CompetitiveIntelligence.tsx` + `components/competitive/*` | ✅ staged in `integration/app/` |
+| Training loop | `integration/server/db/export-config.js` → pipeline `--config` | ✅ exports DB config (guidance/few-shot/products) |
 
 ## 7. Change checklist
 
@@ -156,9 +157,9 @@ Staged + validated against real data (bundled Postgres + the latest pipeline run
 
 **Coordinate with the team:**
 - Polyglot tolerance: a Python worker in an otherwise JS/TS repo.
-- Where the worker runs long-term: Mac Mini cron → K8s CronJob, and the
-  `OPENAI_API_KEY` swap that move requires.
-- DB access path for the interim worker (VPN to pgbot query endpoint vs. run in-cluster).
+- Worker scheduling: **decided** — an in-cluster **K8s CronJob** writes the DB; the GH
+  Actions `competitor-monitor.yml` (#13) stays a Telegram notifier (see §9). The
+  in-cluster move swaps inference auth OAuth → `OPENAI_API_KEY`.
 
 ---
 
@@ -167,3 +168,49 @@ The whole Python pipeline (crawl/diff/classify, rubric, PLG-67 registry) ships *
 as the worker — only `write_db.py` is new. The CI page's nav placement, theme, and tab
 taxonomy already match ours. The real new code is: the SQL schema, `server/` read/write
 routes + cache wiring, and the `CompetitiveIntelligence.tsx` rewire.
+
+---
+
+## 9. Scheduling (decided)
+Two independent schedulers by design — they don't overlap:
+
+| Job | Runs on | Purpose | Writes DB? |
+|---|---|---|---|
+| **K8s CronJob** (in `deploy-plg-app`) | in-cluster | runs the pipeline **and `write_db.py`** → populates the dashboard | ✅ yes (in-cluster → `pgbot-main-18`) |
+| **GH Actions** `competitor-monitor.yml` (#13) | GitHub-hosted | runs the monitor → Telegram summary + JSON artifact | ❌ no — kept as a lightweight notifier |
+
+The GitHub-hosted runner can't reach `pgbot-main-18` (in-cluster only) and doesn't run
+`write_db.py`, so it stays a notifier; **DB population is the CronJob's job.** The CronJob
+command mirrors `pipeline/run-local.sh` — export the DB config (which closes the training
+loop), run the worker, ingest:
+
+```bash
+node server/db/export-config.js /tmp/config.json
+python pipeline/competitor_monitor.py --hours 6 --no-slack --output-dir /tmp/ci --config /tmp/config.json
+python pipeline/write_db.py "$(ls -t /tmp/ci/competitor_monitor_*.json | head -1)" --trigger cron --snapshots /tmp/ci/snapshots
+```
+
+Manifest sketch (lives in `deploy-plg-app`, not this repo):
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: competitor-monitor }
+spec:
+  schedule: "0 */6 * * *"          # align with the GH Actions cadence
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: worker
+              image: <pipeline image: Python 3.11 + pg client + node for export-config>
+              envFrom: [{ secretRef: { name: pg-role-competitor-intel } }]   # DATABASE_URL
+              env:
+                - { name: OPENAI_API_KEY, valueFrom: { secretKeyRef: { name: competitor-intel-openai, key: api-key } } }
+              command: ["/bin/sh", "-c", "<the three steps above>"]
+```
+The in-cluster move swaps inference auth from OAuth → `OPENAI_API_KEY` (per §1). The
+dashboard's in-app "Run pipeline" button triggers the same command via
+`COMPETITIVE_PIPELINE_CMD` (a manual one-off alongside the cron).
