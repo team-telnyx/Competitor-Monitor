@@ -71,6 +71,9 @@ def ingest_run_data(cur, data: dict, *, trigger: str = "scheduled",
     The caller owns the transaction (commit/rollback). Mirrors ingestRunData().
     """
     scan_time = _parse_dt(data.get("scan_time")) or datetime.now(timezone.utc)
+    finished_at = _parse_dt(data.get("finished_at")) or scan_time
+    dur = data.get("duration_seconds")
+    duration_ms = round(dur * 1000) if isinstance(dur, (int, float)) else None
     results = data.get("results") or []
     inf = data.get("inference") or {}
     model = ":".join(p for p in (inf.get("provider"), inf.get("model")) if p) or "unknown"
@@ -81,10 +84,10 @@ def ingest_run_data(cur, data: dict, *, trigger: str = "scheduled",
 
     cur.execute(
         """INSERT INTO runs (started_at, finished_at, hours_window, status, "trigger",
-                             digest_text, slack_status, email_status, error_summary)
-           VALUES (%s, %s, %s, 'running', %s, %s, %s, %s, %s) RETURNING id""",
-        (scan_time, scan_time, data.get("hours") or 24, trigger,
-         data.get("digest"), slack_status, email_status, error_summary),
+                             digest_text, slack_status, email_status, error_summary, duration_ms)
+           VALUES (%s, %s, %s, 'running', %s, %s, %s, %s, %s, %s) RETURNING id""",
+        (scan_time, finished_at, data.get("hours") or 24, trigger,
+         data.get("digest"), slack_status, email_status, error_summary, duration_ms),
     )
     run_id = cur.fetchone()[0]
 
@@ -128,20 +131,21 @@ def ingest_run_data(cur, data: dict, *, trigger: str = "scheduled",
             cur.execute(
                 """INSERT INTO pages (run_competitor_id, competitor_id, url, lastmod,
                         detection_source, title, description, text_preview, text_length,
-                        first_seen_run_id, scraped_at)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        scrape_error, first_seen_run_id, scraped_at)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT (competitor_id, url) DO UPDATE SET
                         title        = COALESCE(EXCLUDED.title,        pages.title),
                         description  = COALESCE(EXCLUDED.description,  pages.description),
                         text_preview = COALESCE(EXCLUDED.text_preview, pages.text_preview),
                         text_length  = COALESCE(EXCLUDED.text_length,  pages.text_length),
+                        scrape_error = EXCLUDED.scrape_error,
                         lastmod      = COALESCE(EXCLUDED.lastmod,      pages.lastmod),
                         scraped_at   = EXCLUDED.scraped_at
                    RETURNING id""",
                 (run_competitor_id, competitor_id, page["url"], lastmod,
                  _detection_source(page), _nz(scraped.get("title")),
                  _nz(scraped.get("description")), _nz(scraped.get("text_preview")),
-                 scraped.get("text_length"), run_id, scan_time),
+                 scraped.get("text_length"), _nz(scraped.get("error")), run_id, scan_time),
             )
             page_id = cur.fetchone()[0]
 
@@ -161,15 +165,10 @@ def ingest_run_data(cur, data: dict, *, trigger: str = "scheduled",
                  _nz(cls.get("rubric_version")), model),
             )
 
-            # Unknown product the model named → a candidate for operator review
-            # (docs/inference-training.md §3). Never overwrites a confirmed product.
-            if cls.get("product") and cls.get("product_known") is False:
-                cur.execute(
-                    """INSERT INTO products (competitor_id, name, category, status, first_seen_page_id)
-                       VALUES (%s, %s, %s, 'candidate', %s)
-                       ON CONFLICT (competitor_id, name) DO NOTHING""",
-                    (competitor_id, cls["product"], _nz(cls.get("category")), page_id),
-                )
+            # Note: we no longer auto-create "candidate" product rows from unknown product
+            # names — that surfaced integration/competitor noise. "Potential new product"
+            # is now a derived flag on the feed item (signal_type=new_product + not in the
+            # tracked catalog); see server/db/competitive.js getFeed.
 
     cur.execute("UPDATE runs SET status=%s WHERE id=%s",
                 ("partial" if any_error else "success", run_id))
@@ -177,7 +176,38 @@ def ingest_run_data(cur, data: dict, *, trigger: str = "scheduled",
     return {"run_id": run_id, "pages": total_pages, "relevant": total_relevant}
 
 
-def ingest_run_file(path: str, dsn: str | None = None, **opts) -> dict:
+def ingest_snapshots(cur, snapshot_dir: str) -> int:
+    """Persist the full sitemap URL inventory per competitor into the snapshots table.
+
+    competitor_monitor.py writes `<name_lower_underscored>_sitemap.json` files of
+    {urls, count, saved_at}. We match them to competitors by normalized name so the
+    Sources view can break the inventory down by endpoint. One snapshot row per run.
+    """
+    import glob
+    cur.execute("SELECT id, name FROM competitors")
+    by_safe = {n.lower().replace(" ", "_"): i for i, n in cur.fetchall()}
+    count = 0
+    for path in glob.glob(os.path.join(snapshot_dir, "*_sitemap.json")):
+        safe = os.path.basename(path)[: -len("_sitemap.json")]
+        cid = by_safe.get(safe)
+        if not cid:
+            continue
+        try:
+            snap = json.load(open(path, "r", encoding="utf-8"))
+        except (ValueError, OSError):
+            continue
+        urls = snap.get("urls") or []
+        if not urls:
+            continue
+        cur.execute(
+            "INSERT INTO snapshots (competitor_id, urls, url_count) VALUES (%s, %s, %s)",
+            (cid, json.dumps(urls), snap.get("count") or len(urls)),
+        )
+        count += 1
+    return count
+
+
+def ingest_run_file(path: str, dsn: str | None = None, snapshot_dir: str | None = None, **opts) -> dict:
     """Read a pipeline JSON artifact and ingest it in one transaction."""
     dsn = dsn or os.environ.get("DATABASE_URL")
     if not dsn:
@@ -187,6 +217,8 @@ def ingest_run_file(path: str, dsn: str | None = None, **opts) -> dict:
     with psycopg.connect(dsn) as conn:
         with conn.cursor() as cur:
             summary = ingest_run_data(cur, data, **opts)
+            if snapshot_dir:
+                summary["snapshots"] = ingest_snapshots(cur, snapshot_dir)
         conn.commit()
     return summary
 
@@ -196,11 +228,12 @@ def main(argv=None):
     ap.add_argument("path", help="path to competitor_monitor.py output JSON")
     ap.add_argument("--trigger", choices=["scheduled", "manual"], default="scheduled")
     ap.add_argument("--dsn", default=None, help="override DATABASE_URL")
+    ap.add_argument("--snapshots", default=None, help="dir of *_sitemap.json inventories to persist")
     args = ap.parse_args(argv)
 
-    summary = ingest_run_file(args.path, dsn=args.dsn, trigger=args.trigger)
+    summary = ingest_run_file(args.path, dsn=args.dsn, trigger=args.trigger, snapshot_dir=args.snapshots)
     print(f"run {summary['run_id']}: {summary['pages']} pages, "
-          f"{summary['relevant']} relevant")
+          f"{summary['relevant']} relevant, snapshots={summary.get('snapshots', 0)}")
     return 0
 
 
