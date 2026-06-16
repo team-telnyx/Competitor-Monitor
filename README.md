@@ -66,6 +66,26 @@ python tools/competitor_monitor.py --hours 48
 
 See [workflows/competitor_monitoring.md](workflows/competitor_monitoring.md) for full details.
 
+## GitHub Actions Schedule
+
+The repo includes `.github/workflows/competitor-monitor.yml`, which runs every 6
+hours and can also be triggered manually from the Actions tab.
+
+Configure these GitHub Secrets for the scheduled workflow:
+
+```
+OPENAI_API_KEY         # Enables classification and digest generation
+TELEGRAM_BOT_TOKEN    # Bot token used to send the run summary
+TELEGRAM_CHAT_ID      # Chat ID that receives the run summary
+```
+
+Optional GitHub Variables:
+
+```
+OPENAI_MODEL                 # Defaults to gpt-4o-mini
+SLACK_COMPETITOR_CHANNEL     # Only used if Slack delivery is re-enabled
+```
+
 ## Roadmap
 
 - **Slack notifications** — Send daily digest to Max and Jake via Slack DM/channel

@@ -1,0 +1,174 @@
+name: Competitor Monitor
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: "Look-back window in hours"
+        required: false
+        default: "6"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: competitor-monitor
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    name: Run competitor monitor
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    env:
+      SCAN_HOURS: ${{ github.event.inputs.hours || '6' }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-4o-mini' }}
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+      SLACK_COMPETITOR_CHANNEL: ${{ vars.SLACK_COMPETITOR_CHANNEL }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Run monitor
+        id: monitor
+        continue-on-error: true
+        shell: bash
+        run: |
+          mkdir -p .tmp
+          set +e
+          python tools/competitor_monitor.py \
+            --hours "$SCAN_HOURS" \
+            --output-dir .tmp \
+            --no-slack 2>&1 | tee .tmp/monitor.log
+          status=${PIPESTATUS[0]}
+          artifact="$(ls -t .tmp/competitor_monitor_*.json 2>/dev/null | head -1 || true)"
+          {
+            echo "exit_code=$status"
+            echo "artifact=$artifact"
+          } >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Upload monitor output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: competitor-monitor-output
+          path: |
+            .tmp/competitor_monitor_*.json
+            .tmp/monitor.log
+          if-no-files-found: ignore
+
+      - name: Send Telegram summary
+        if: always()
+        shell: python
+        env:
+          MONITOR_EXIT_CODE: ${{ steps.monitor.outputs.exit_code }}
+          MONITOR_ARTIFACT: ${{ steps.monitor.outputs.artifact }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          import json
+          import os
+          import pathlib
+          import urllib.parse
+          import urllib.request
+
+          token = os.getenv("TELEGRAM_BOT_TOKEN")
+          chat_id = os.getenv("TELEGRAM_CHAT_ID")
+          exit_code = os.getenv("MONITOR_EXIT_CODE") or "unknown"
+          artifact = os.getenv("MONITOR_ARTIFACT") or ""
+          run_url = os.getenv("RUN_URL")
+
+          def summarize_artifact(path):
+              if not path:
+                  return 0, 0, []
+              try:
+                  data = json.loads(pathlib.Path(path).read_text())
+              except Exception:
+                  return 0, 0, []
+
+              total_new = 0
+              total_relevant = 0
+              notable = []
+              for result in data.get("results", []):
+                  competitor = result.get("competitor", "Unknown")
+                  pages = result.get("new_pages", [])
+                  total_new += len(pages)
+                  relevant_pages = [
+                      page for page in pages
+                      if page.get("classification", {}).get("relevant", True)
+                  ]
+                  total_relevant += len(relevant_pages)
+                  for page in relevant_pages[:3]:
+                      classification = page.get("classification", {})
+                      category = classification.get("category") or "Unclassified"
+                      title = page.get("scraped", {}).get("title") or page.get("url")
+                      notable.append(f"- {competitor}: [{category}] {title}")
+              return total_new, total_relevant, notable[:8]
+
+          def log_tail():
+              path = pathlib.Path(".tmp/monitor.log")
+              if not path.exists():
+                  return ""
+              lines = path.read_text(errors="replace").splitlines()
+              return "\n".join(lines[-8:])
+
+          total_new, total_relevant, notable = summarize_artifact(artifact)
+          ok = exit_code == "0"
+          status = "succeeded" if ok else f"failed with exit code {exit_code}"
+          artifact_name = pathlib.Path(artifact).name if artifact else "none"
+
+          lines = [
+              f"Competitor Monitor {status}.",
+              f"Window: last {os.getenv('SCAN_HOURS', '6')} hours",
+              f"Relevant updates: {total_relevant}",
+              f"New pages: {total_new}",
+              f"Artifact: {artifact_name}",
+          ]
+          if notable:
+              lines.append("")
+              lines.extend(notable)
+          if not ok:
+              tail = log_tail()
+              if tail:
+                  lines.extend(["", "Log tail:", tail])
+          if run_url:
+              lines.extend(["", run_url])
+
+          message = "\n".join(lines)
+          if len(message) > 3900:
+              message = message[:3900] + "\n..."
+
+          if not token or not chat_id:
+              print("Telegram secrets are not configured; summary follows:")
+              print(message)
+              raise SystemExit(0)
+
+          url = f"https://api.telegram.org/bot{token}/sendMessage"
+          body = urllib.parse.urlencode({
+              "chat_id": chat_id,
+              "text": message,
+              "disable_web_page_preview": "true",
+          }).encode()
+          request = urllib.request.Request(url, data=body, method="POST")
+          with urllib.request.urlopen(request, timeout=30) as response:
+              print(response.read().decode())
+
+      - name: Fail workflow if monitor failed
+        if: steps.monitor.outputs.exit_code != '0'
+        run: exit 1
