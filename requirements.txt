@@ -3,6 +3,9 @@ requests>=2.31.0
 beautifulsoup4>=4.12.0
 lxml>=4.9.0
 
+# Postgres sink (tools/write_db.py — persists a run into the competitor_intel DB)
+psycopg[binary]>=3.1.0
+
 # Environment management
 python-dotenv>=1.0.0
 

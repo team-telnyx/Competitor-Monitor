@@ -1,0 +1,10 @@
+{
+  "name": "plg-competitive-integration",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "plg-dashboard-bound consumer code for the Competitive Intelligence surface (read query layer, routes, scheduler, frontend). Mirrors the target server/ + app/ trees.",
+  "dependencies": {
+    "pg": "^8.13.0"
+  }
+}

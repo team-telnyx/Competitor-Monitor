@@ -76,7 +76,8 @@ Feed · Competitors · Categories · Training · Sources
 - Reverse-chronological feed of updates across all competitors.
 - Each card shows: **relevance score (0–100) + signal type** (new_product / new_feature / update / tangential / irrelevant), category badge (color map below), competitor, **product**, Claude/LLM one-line summary, the page **endpoint**, detected date.
 - An inline **"remove from consideration"** control per card: drops a noisy **endpoint** (path) or **subdomain** via the approval workflow (§5.4).
-- Filters: competitor, category, date range, detection source, relevance (≥ threshold). Full-text search across title/description/summary/preview.
+- A **"potential new product" flag** per card: when the classifier reports a `new_product` signal for a product **not already in the tracked catalog**, the item is flagged (and filterable) so an operator can consider adding it. A parallel **`new_feature` flag is captured** in the data for later use but intentionally not surfaced yet. *(This replaces the former Training "candidate products" panel, which was removed — it surfaced integration/competitor noise; the feed flag is contextual and high-signal.)*
+- Filters: competitor, category, **date range** (presets 15/30/60/90 days + custom from–to), relevance (≥ threshold), and the potential-new-product flag. Full-text search across title/summary.
 - Item detail drawer: full scraped preview, classification + **reasoning**, score/signal/product, which run detected it.
 - **Category taxonomy** (unified, covers Telnyx's full product surface; canonical list in [db.ts](../dashboard/backend/src/db.ts) + [inference.py](../tools/inference.py)): **AI Assistants, Inference, STT, TTS, Voice, Messaging, Numbers, Identity, Fax, IoT, Networking, Storage, Other** (+ Not Relevant). Each has a color in the shared map. This taxonomy drives classification, the Categories tab, the offering map, and the product registry — so competitors in any of these areas slot in.
 
@@ -99,17 +100,19 @@ A per-competitor intelligence view with two halves:
 The operator's refinement console. Determinism comes from scaffolding the LLM, not the model.
 
 - **Review queue** — **mirrors the Feed** (scored, relevant items, newest first, paginated; reviewed items flagged) so operators can review the whole set and establish a baseline. Per item: **Confirm**, **Flag irrelevant** (+ reason category + note), **Recategorize**, **Fix product**. Actions apply an **immediate correction** to the page and record durable `feedback`. (A borderline/"needs attention" filter can layer on later.)
-- **Candidate products** — unknown product names the classifier surfaced; confirm (adds to the registry, locks future categorization) or reject.
+- **Pulls over time** — a collapsible chart at the top of the tab plotting recent runs (new + relevant counts) so operators can see crawl cadence at a glance. *(The former "candidate products" panel was removed — surfacing untracked products is now a **"potential new product" flag in the Feed**, §5.1.)*
 - **Inference guidance** — free-text notes injected into the next run's classify prompt. **Scope = Global** (every competitor) or a specific competitor. *(Global is the default in the Scope dropdown; it is simply guidance with no competitor attached.)*
 - **Pending removals (approvals)** — endpoint/subdomain removal requests from cards; **approve** adds an endpoint to the competitor's `excludePatterns` or a subdomain to its `ignoredSubdomains` (both visible in Sources); **reject** discards. Approval is open today; admin-gated later.
 - **How feedback reaches the model:** per-competitor **few-shot examples** (recent corrections) + **guidance** + deterministic **rules** (ignored subdomains, exclude patterns, product/category locks) are exported by the runner into the pipeline config and injected/applied on the next run. Examples and per-competitor guidance are **scoped to that competitor**; only Global guidance crosses competitors.
 
 ### 5.5 Sources  *(Shipped)*
 - Per-competitor management of **sources** (sitemap/feed URLs), **include/exclude patterns**, **ignored subdomains**, **detection method** (lastmod vs snapshot-diff), and active toggle. Add/remove sources; add new competitors; guarded delete.
+- Cards show a **scrape success/fail bar** and the **last snapshot timestamp**; an **explainer** at the top contrasts lastmod vs snapshot-diff detection.
+- A **per-source detail view** ("Details"): total links + in-consideration counts; the **sitemap skeleton** (base endpoints → sub-endpoints with link counts, from the latest snapshot); **scrape success/failure** with per-page failure reasons (the hook for a future fallback scraper); and **endpoint culling** — *Remove* files an approval-gated exclusion (shown in **Pending removals**), approved exclusions appear in **Removed endpoints** with one-click **Re-add**.
 - The dashboard is the source of truth: active competitors/sources/rules/products are exported to the pipeline on each run.
 
 ### 5.6 Ops console  *(Partial)*
-- Run history (timestamp, look-back, competitors checked, new/relevant counts, status). Per-competitor **health** (last check, last new page, consecutive-zero "possible silent breakage" flag). Error surfacing. **Manual trigger** (async job + status polling; mirrors CLI flags). Auth + role gating *(planned)*.
+- Run history (timestamp, look-back, competitors checked, new/relevant counts, status). Per-competitor **health** (last check, last new page, consecutive-zero "possible silent breakage" flag). Error surfacing. **Manual trigger** — a "Run pipeline" button (async job + status polling) that reports the **last pull's duration**; a "Refresh data" button rebuilds the read cache from the DB. The trigger command is pluggable (local worker now → K8s Job in prod). Auth + role gating *(planned)*.
 
 ### 5.7 Slack ↔ dashboard  *(Planned)*
 - Slack digest blocks gain "View in dashboard" deep links (run + per-item). Dashboard surfaces digest delivery status. Existing Slack push behavior preserved.
@@ -171,7 +174,7 @@ GET  /api/telnyx-offerings ; GET/PATCH /api/offering-comparisons   # (planned) �
 **Shipped**
 - **Phase 1 — Persistence + Feed.** DB + API; pipeline reads DB config; feed with filters/search + detail.
 - **Training A — Scoring.** Rubric (v1, threshold 40), 0–100 score + signal types, product registry + canonicalization, schema.
-- **Training B — Feedback capture.** Training review queue, feedback endpoints + immediate correction, candidate products, scores surfaced on the feed.
+- **Training B — Feedback capture.** Training review queue, feedback endpoints + immediate correction, scores + a **potential-new-product flag** surfaced on the feed.
 - **Training C — Feedback → runs.** Plain-text guidance (global/per-competitor) + few-shot injection + endpoint/subdomain removal approval workflow + generated `relevance-policy.md`.
 - **Unified taxonomy + tabs.** Category taxonomy expanded to Telnyx's full product surface; **Categories tab** (browse + trends), **Competitors tab** (recent high-relevance activity), and the **Telnyx offerings catalog** (`telnyx_offerings`/`offering_comparisons`, seeded with 31 offerings).
 
@@ -181,6 +184,17 @@ GET  /api/telnyx-offerings ; GET/PATCH /api/offering-comparisons   # (planned) �
 - **Ops console** completion + **auth/role gating** (the admin boundary for approvals, Telnyx-map editing, and eventual classification overrides).
 - **Automations (Training D)** — downstream actions that consume `relevance_score` (e.g. alerts/tickets on high-confidence new products), confidence-gated to route uncertain items to the queue.
 - **Slack deep links** + delivery status.
+
+**Roadmap / outstanding**
+- **Wire the `new_feature` flag** — it's captured per feed item today but not surfaced; decide where it drives action (e.g. a "feature watch" view) before exposing it.
+- **Potential-competitor discovery** — the classifier surfaces other companies (Five9, Genesys, NICE, Talkdesk, Amazon Connect, Twilio…) on competitor pages; turn that into a "potential competitors spotted" feed instead of discarding it.
+- **Scrape fallback** — a secondary scraper (e.g. headless render) for pages that return no content (403 / JS-rendered); failures + reasons are already surfaced per source.
+- **Backfill mode** — optionally scrape the existing sitemap inventory (top-N per endpoint) rather than only newly-detected pages, so a competitor's archive can be seeded without waiting for changes.
+- **Snapshot inventory for lastmod sources** — capture the URL skeleton for lastmod-based competitors too (ElevenLabs/Twilio/Bland/Modal currently show a count but no per-endpoint breakdown).
+- **Detection-method correctness** — sync each competitor's `use_snapshot_diff` flag to its real sitemap (no-lastmod sitemaps must use snapshot-diff) so Sources labels and runs match.
+- **Classification quality** — tighten product/category extraction (it over-extracted integration names) and the finer STT/TTS/Inference tagging.
+- **Pipeline in prod** — run the worker as a K8s CronJob (Python out of the alpine web image), switch inference auth OAuth → `OPENAI_API_KEY`, and apply migrations via a Job (idempotent `migrate.js` ready).
+- **Server-side date scoping** — feed date filtering is client-side today; push windowing into the query for large archives.
 
 ## 10. Open questions
 - **Telnyx offerings source** — curate a seed catalog for the §5.2 map, or pull from an existing internal source of truth? Who owns keeping it current?

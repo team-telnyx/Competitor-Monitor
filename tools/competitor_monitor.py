@@ -868,6 +868,7 @@ def run_monitor(competitors=None, hours=24, scrape=True, classify=True,
     Returns:
         List of results per competitor
     """
+    run_started = datetime.now(timezone.utc)
     if competitors is None:
         competitors = COMPETITORS
 
@@ -963,11 +964,14 @@ def run_monitor(competitors=None, hours=24, scrape=True, classify=True,
     output_path = Path(output_dir)
     output_path.mkdir(exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_finished = datetime.now(timezone.utc)
     output_data = {
         "results": all_results,
         "digest": digest,
         "inference": describe_active_client(get_inference_client()) if classify else None,
-        "scan_time": datetime.now(timezone.utc).isoformat(),
+        "scan_time": run_started.isoformat(),
+        "finished_at": run_finished.isoformat(),
+        "duration_seconds": round((run_finished - run_started).total_seconds(), 1),
         "hours": hours,
     }
     json_file = output_path / f"competitor_monitor_{timestamp}.json"
