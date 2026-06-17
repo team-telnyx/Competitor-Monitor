@@ -81,11 +81,11 @@ Competitors are configured in the `COMPETITORS` list
 
 - **lastmod mode** (default): keeps pages whose sitemap `<lastmod>` is within the
   `--hours` window. Used when the site publishes reliable `lastmod` dates
-  (e.g. ElevenLabs, Twilio, Bland AI, and Modal via its blog Atom feed).
+  (e.g. ElevenLabs, Retell AI, Twilio, Bland AI, and Modal via its blog Atom feed).
 - **snapshot-diff mode** (`use_snapshot_diff: true`): for sites with no usable `lastmod`.
   Compares the current sitemap URL set against a saved snapshot in
   `.tmp/snapshots/<name>_sitemap.json` and treats newly-appeared URLs as "new."
-  Used for Vapi, Retell AI, AssemblyAI, and the other inference platforms
+  Used for Vapi, AssemblyAI, and the other inference platforms
   (Together AI, Baseten, Fireworks AI, RunPod, Replicate).
 
 **Feed sources.** A `sitemap_urls` entry may point at an **Atom (`<feed>`) or RSS

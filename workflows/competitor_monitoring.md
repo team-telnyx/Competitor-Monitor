@@ -24,7 +24,7 @@ Daily automated scan of competitor websites to detect new pages and product upda
 |-----------|-----------------|:---:|-------|
 | Vapi | Snapshot diff | No | Voice agents, orchestration |
 | ElevenLabs | Lastmod | Yes | TTS, voice cloning, audio AI |
-| Retell AI | Snapshot diff | No | Voice agents, contact center AI |
+| Retell AI | Lastmod | Yes | Voice agents, contact center AI |
 | Bland AI | Lastmod | Yes | Voice agents, phone AI |
 
 ### Transcription / Audio AI
