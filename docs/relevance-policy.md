@@ -3,7 +3,7 @@
 > Auto-generated from the dashboard DB. Do not edit by hand — regenerate via
 > `POST /api/policy/regenerate`. Design: [inference-training.md](./inference-training.md).
 
-Rubric version: **v1** · relevance threshold: **40** (a page is "relevant" at/above this score).
+Rubric version: **v2** · relevance threshold: **40** (a page is "relevant" at/above this score).
 
 ## Rubric
 
@@ -13,7 +13,7 @@ Rubric version: **v1** · relevance threshold: **40** (a page is "relevant" at/a
 | 70–89 | `new_feature` | New feature on an existing product |
 | 40–69 | `update` | Incremental update (perf, pricing, latency) |
 | 15–39 | `tangential` | Customer story, webinar, partnership |
-| 0–14 | `irrelevant` | Careers, legal, brand, events, marketing |
+| 1–14 | `irrelevant` | Careers, legal, brand, events, marketing |
 
 ## Tracked products & exclusion rules by competitor
 

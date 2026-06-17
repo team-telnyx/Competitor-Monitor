@@ -41,7 +41,7 @@ class InferenceError(RuntimeError):
 # the bands/threshold change so stored scores remain auditable.
 # =============================================================================
 
-RUBRIC_VERSION = "v1"
+RUBRIC_VERSION = "v2"
 # A page is "relevant" when its score is at/above this. Customer stories/webinars
 # (15–39) fall below it by default.
 RELEVANCE_THRESHOLD = 40
@@ -59,7 +59,7 @@ RUBRIC_BANDS = """- 90-100  new_product: a distinct NEW product launch or flagsh
 - 70-89   new_feature: a new feature, capability, or model version on an EXISTING product
 - 40-69   update: an incremental update (performance, pricing, latency, regional rollout)
 - 15-39   tangential: a customer story, case study, webinar, or partnership that merely uses a product
-- 0-14    irrelevant: careers, legal, brand assets, events, or generic marketing"""
+- 1-14    irrelevant: careers, legal, brand assets, events, or generic marketing"""
 
 
 def score_to_relevant(score):
@@ -188,7 +188,7 @@ Your job is to score how strongly each page signals a NEW PRODUCT or a NEW FEATU
 Focus areas we track:
 {focus_areas_str}
 
-Relevance rubric — score 0-100, and pick the matching signal_type:
+Relevance rubric — score 1-100, and pick the matching signal_type:
 {RUBRIC_BANDS}
 
 Known products for {competitor_name} (match to these EXACTLY when applicable):
@@ -201,7 +201,7 @@ For each page return an object with:
 - "product": the product name (use the exact known name when it matches), or "" if none applies
 - "category": one of {categories_str}
 - "signal_type": one of "new_product", "new_feature", "update", "tangential", "irrelevant"
-- "relevance_score": an integer 0-100 consistent with the band for that signal_type
+- "relevance_score": an integer 1-100 consistent with the band for that signal_type; use 1, not 0, for pages with no usable product signal
 - "summary": one sentence on what is new (product/competitive view)
 - "reasoning": one sentence justifying the score and signal_type
 

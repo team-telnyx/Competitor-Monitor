@@ -46,7 +46,7 @@ an existing product** from a competitor.
 | 70–89 | New feature on an existing product | `new_feature` | "Scribe v2", new API capability, new model version |
 | 40–69 | Incremental update | `update` | latency/perf, pricing change, regional rollout |
 | 15–39 | Tangential | `tangential` | customer story, webinar recap, partnership, case study |
-| 0–14 | Irrelevant | `irrelevant` | careers, legal, brand assets, events, generic marketing |
+| 1–14 | Irrelevant | `irrelevant` | careers, legal, brand assets, events, generic marketing |
 
 - **`relevant` (boolean)** = `relevance_score >= RELEVANCE_THRESHOLD` (**default 40**,
   tunable). So customer stories/webinars (15–39) default to *not relevant* — this is

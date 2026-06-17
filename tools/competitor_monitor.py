@@ -600,6 +600,8 @@ def classify_pages(pages, competitor_name, known_products=None, guidance=None, e
             )
             raw_score = c.get("relevance_score")
             score = int(raw_score) if isinstance(raw_score, (int, float)) else None
+            if score is not None:
+                score = min(100, max(1, score))
             # Lock category to the registry when the product is known (deterministic).
             category = registry_category or c.get("category") or "Other AI/Voice"
             pages[idx]["classification"] = {
