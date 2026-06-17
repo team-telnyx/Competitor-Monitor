@@ -75,7 +75,10 @@ COMPETITORS = [
         "name": "Vapi",
         "sitemap_urls": ["https://vapi.ai/sitemap.xml"],
         "include_patterns": [],
-        "exclude_patterns": [r"/legal/", r"/terms", r"/privacy", r"/careers"],
+        "exclude_patterns": [
+            r"/legal/", r"/terms", r"/privacy", r"/careers",
+            r"/custom-agents/",
+        ],
         "use_snapshot_diff": True,
     },
     {

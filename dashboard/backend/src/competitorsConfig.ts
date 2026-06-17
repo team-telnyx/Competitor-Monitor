@@ -14,7 +14,7 @@ export const COMPETITOR_SEED: CompetitorSeed[] = [
     name: "Vapi",
     sitemapUrls: ["https://vapi.ai/sitemap.xml"],
     includePatterns: [],
-    excludePatterns: ["/legal/", "/terms", "/privacy", "/careers"],
+    excludePatterns: ["/legal/", "/terms", "/privacy", "/careers", "/custom-agents/"],
     useSnapshotDiff: true,
   },
   {

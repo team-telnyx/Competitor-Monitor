@@ -26,7 +26,7 @@
 | RSS | N/A | — | — | — | — | — | No RSS feed |
 
 **Product area tags:** AI Assistants, Voice AI
-**Scraping constraints:** No lastmod in sitemap, no changelog, docs are auth-gated. Blog is only reliable source. Use snapshot diff on sitemap.
+**Scraping constraints:** No lastmod in sitemap, no changelog, docs are auth-gated. Blog is the highest-signal source. Exclude `/custom-agents/` sitemap templates; they are vertical SEO/use-case pages, not product signals. Use snapshot diff on sitemap.
 
 ---
 
