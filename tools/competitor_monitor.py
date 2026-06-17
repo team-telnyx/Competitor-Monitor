@@ -94,13 +94,13 @@ COMPETITORS = [
     },
     {
         "name": "Retell AI",
+        # Has lastmod
         "sitemap_urls": ["https://www.retellai.com/sitemap.xml"],
         "include_patterns": [
             r"/blog/", r"/changelog", r"/docs/",
             r"retellai\.com/[^/]+$",
         ],
         "exclude_patterns": [r"/legal/", r"/terms", r"/privacy", r"/careers"],
-        "use_snapshot_diff": True,
     },
     {
         "name": "Bland AI",

@@ -48,14 +48,14 @@
 
 | Source | URL | Type | Fetchable | Has Dates | lastmod | Detection | Notes |
 |--------|-----|------|:---------:|:---------:|:-------:|-----------|-------|
-| Blog | https://www.retellai.com/blog | Blog | Yes | Partial | No | Snapshot diff | Mix of product updates and thought leadership |
-| Changelog | https://www.retellai.com/changelog | Changelog | Yes | Yes | No | Snapshot diff | **Excellent source** — monthly entries with detailed feature lists |
+| Blog | https://www.retellai.com/blog | Blog | Yes | Partial | Yes | Lastmod | Mix of product updates and thought leadership |
+| Changelog | https://www.retellai.com/changelog | Changelog | Yes | Yes | Yes | Lastmod | **Excellent source** — monthly entries with detailed feature lists |
 | Docs | https://docs.retellai.com | Docs | Unknown | — | — | — | Needs testing |
-| Sitemap | https://www.retellai.com/sitemap.xml | Sitemap | Yes | — | No | Snapshot diff | 630 URLs, no lastmod |
+| Sitemap | https://www.retellai.com/sitemap.xml | Sitemap | Yes | — | Yes | Lastmod | Sitemap includes lastmod dates |
 | RSS | N/A | — | — | — | — | — | No RSS feed |
 
 **Product area tags:** AI Assistants, Voice AI, STT (ASR), TTS
-**Scraping constraints:** No lastmod. Changelog is the highest-signal source — structured monthly entries with specific feature names. Blog has inconsistent dates.
+**Scraping constraints:** Sitemap has lastmod dates. Changelog is the highest-signal source — structured monthly entries with specific feature names. Blog has inconsistent dates.
 
 ---
 
@@ -189,7 +189,7 @@
 |-----------|------------------|--------|:-----------------:|
 | Vapi | Snapshot diff (sitemap) | — | No |
 | ElevenLabs | Lastmod (sitemap) | — | Yes |
-| Retell AI | Snapshot diff (sitemap) | Changelog scrape | No |
+| Retell AI | Lastmod (sitemap) | Changelog scrape | Yes |
 | Bland AI | Lastmod (sitemap) | — | Yes |
 | Deepgram | Snapshot diff (sitemap) | — | No |
 | AssemblyAI | Snapshot diff (sitemap) | — | No |

@@ -37,7 +37,7 @@ export const COMPETITOR_SEED: CompetitorSeed[] = [
     sitemapUrls: ["https://www.retellai.com/sitemap.xml"],
     includePatterns: ["/blog/", "/changelog", "/docs/", "retellai\\.com/[^/]+$"],
     excludePatterns: ["/legal/", "/terms", "/privacy", "/careers"],
-    useSnapshotDiff: true,
+    useSnapshotDiff: false,
   },
   {
     name: "Bland AI",
